@@ -36,6 +36,8 @@ jobs:
           java-version: 17
           cache: sbt
       - uses: sbt/setup-sbt@13c2c27693f0ec4a33b1ebefd04c53c4c0ba618a # v1
+      - uses: coursier/cache-action@2addd381bd2c931f42d4b734b9d0c9b73aac16fb # v6
+      - uses: VirtusLab/scala-cli-setup@d320e01a605bf27128a5657575382668f83ef34e # v1.14.0
       - name: Run tests
         run: sbt test
 
