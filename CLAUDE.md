@@ -110,7 +110,7 @@ Java-8 stdlib) with `-Yfuture-lazy-vals` (keeps the Unsafe-free VarHandle lazy-v
 Java 9. The test suites are split into two sbt modules by the JVM they need, and a plain `sbt test`
 is intentionally disabled (it errors with a pointer to the two targets):
 
-- **`sbt tests-jdk9`** (module `tests-jdk9`, run on **Java 9–11**) — pure bytecode-analysis suites
+- **`sbt tests-jdk9`** (module `tests-jdk9`, run on **Java 11**) — pure bytecode-analysis suites
   (`LazyValDetectionTests`, `SemanticLazyValComparisonTests`, `AgentPatchingTests`), the Java-9
   runtime proof (`Jdk9RuntimeTests` runs the agent + VarHandle-patched 3.3–3.7 code), and
   `ClassfileVersionTests` (asserts the agent jar + core are ≤ v53). Locally there's no JDK 9; use
@@ -119,7 +119,10 @@ is intentionally disabled (it errors with a pointer to the two targets):
   `AgentIntegrationTests`, which assert presence/absence of the `sun.misc.Unsafe` warning that only
   newer JDKs emit. Locally: `JAVA_HOME=~/.sdkman/candidates/java/25-graalce`.
 
-CI runs these as two jobs (`test-jdk9` on zulu 9, `test-jdk25` on temurin 25).
+CI runs these as two jobs (`test-jdk9` on temurin 11, `test-jdk25` on temurin 25). The harness
+itself needs Java 11+ (sbt, scala-cli, and testops' jsoniter dependency are >v53), so the actual
+Java-9 floor is guaranteed by `ClassfileVersionTests` (published classes ≤ v53), not by executing
+on Java 9. Java 9/10 are best-effort.
 
 **IMPORTANT: still narrow with `SELECT_EXAMPLE` / `ONLY_SCALA_VERSIONS`.** A full module run compiles
 examples across 10+ Scala versions and is very slow. To verify a full module passes, ask the user.

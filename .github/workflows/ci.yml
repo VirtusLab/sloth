@@ -32,6 +32,10 @@ jobs:
   # IMPORTANT: scala-cli-setup installs its own JVM and exports JAVA_HOME, which would clobber the
   # JVM we want sbt to run on. So it MUST run BEFORE setup-java, and we additionally pin JAVA_HOME +
   # PATH in the run step so both sbt AND the `java` subprocesses the tests fork use the right JDK.
+  #
+  # Runs on Temurin 11, not 9: the test harness (sbt, scala-cli, and testops' jsoniter dependency)
+  # needs Java 11+. The actual Java-9 floor is guaranteed by ClassfileVersionTests (all published
+  # classes <= v53) rather than by executing on a Java 9 JVM; Java 9/10 are best-effort.
   test-jdk9:
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -42,8 +46,8 @@ jobs:
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         id: jdk
         with:
-          distribution: zulu
-          java-version: 9
+          distribution: temurin
+          java-version: 11
           cache: sbt
       - uses: sbt/setup-sbt@13c2c27693f0ec4a33b1ebefd04c53c4c0ba618a # v1
       - uses: coursier/cache-action@2addd381bd2c931f42d4b734b9d0c9b73aac16fb # v6
