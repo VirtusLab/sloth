@@ -48,16 +48,18 @@ class AgentIntegrationTests extends FunSuite {
     // Agent jar is built automatically by sbt (Test/test dependsOn agent/assembly)
     agentJarPath = TestPaths.findAgentJar()
 
-    // Write test source and compile with scala-cli
+    // Write test source and compile with scala-cli. Boot the Bloop daemon once first (this suite
+    // doesn't go through ExampleRunner) so the scala-cli calls connect to a running server.
+    BloopWarmup.ensure()
     tempDir = os.temp.dir(prefix = "lazyvalgrade-agent-integ-", deleteOnExit = false)
     os.write(tempDir / "AgentTestApp.scala", testSource)
 
     println(s"Compiling test source with Scala $scalaVersion...")
-    os.proc("scala-cli", "compile", "--jvm", "17", "-S", scalaVersion, tempDir.toString)
+    os.proc("scala-cli", "compile", "--jvm", "17", "--bloop-startup-timeout", "180s", "-S", scalaVersion, tempDir.toString)
       .call(cwd = tempDir, stdout = os.Inherit, stderr = os.Inherit)
 
     // Get classpath
-    val cpResult = os.proc("scala-cli", "compile", "--print-classpath", "--jvm", "17", "-S", scalaVersion, tempDir.toString)
+    val cpResult = os.proc("scala-cli", "compile", "--print-classpath", "--jvm", "17", "--bloop-startup-timeout", "180s", "-S", scalaVersion, tempDir.toString)
       .call(cwd = tempDir, stderr = os.Pipe, stdout = os.Pipe)
     classpath = cpResult.out.text().trim
 

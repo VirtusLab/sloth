@@ -57,7 +57,7 @@ class Jdk9RuntimeTests extends FunSuite with ExampleLoader {
 
   /** Full classpath (scala-library + deps) for a compiled example, via scala-cli. */
   def getScalaCliClasspath(targetDir: os.Path, scalaVersion: String): String =
-    os.proc("scala-cli", "compile", "--print-classpath", "--jvm", "17", "-S", scalaVersion, targetDir.toString)
+    os.proc("scala-cli", "compile", "--print-classpath", "--jvm", "17", "--bloop-startup-timeout", "180s", "-S", scalaVersion, targetDir.toString)
       .call(cwd = targetDir, stderr = os.Pipe, stdout = os.Pipe)
       .out.text().trim
 

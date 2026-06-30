@@ -10,6 +10,31 @@ import lazyvalgrade.analysis.{LazyValAnalyzer, ClassfileGroup}
 import lazyvalgrade.lazyval.{LazyValDetector, LazyValDetectionResult, ScalaVersion}
 import lazyvalgrade.patching.BytecodePatcher
 
+/** Single chokepoint that boots the scala-cli Bloop compilation server exactly once per JVM.
+  *
+  * The fixtures compile each Scala version in parallel. Starting the Bloop daemon is the only step
+  * that races: many scala-cli clients hitting `ensureBloopRunning` at once on a cold CI runner all
+  * try to spawn the server and time out (`TimeoutException: Future timed out after [30 seconds]`).
+  * Once the daemon is up, every client just connects to it — so we warm it once, behind a `lazy val`
+  * (which the JVM initializes under a lock, blocking concurrent callers until it completes), and only
+  * then let the parallel compilations proceed. Keeping Bloop (vs `--server=false`) preserves its
+  * large incremental-compile speedup.
+  */
+object BloopWarmup {
+  // First access boots the daemon; concurrent accessors block on lazy-val init until it's ready.
+  private lazy val booted: Unit = {
+    val dir = os.temp.dir(prefix = "lazyvalgrade-bloop-warmup-")
+    os.write.over(dir / "Warmup.scala", "object Warmup\n")
+    // Generous startup timeout so a cold daemon (JVM download + start) doesn't trip the 30s default.
+    os.proc("scala-cli", "compile", "--jvm", "17", "--bloop-startup-timeout", "180s", "-S", "3.3.8", dir.toString)
+      .call(check = false, stderr = os.Pipe, stdout = os.Pipe)
+    os.remove.all(dir)
+  }
+
+  /** Ensure the Bloop daemon is running before launching parallel compilations. Idempotent. */
+  def ensure(): Unit = booted
+}
+
 /** Runs Scala compilation examples across multiple versions
   *
   * @param examplesRoot
@@ -96,7 +121,7 @@ class ExampleRunner(
     // default target and is therefore only run on the JDK-25 leg (used as a static reference here).
     val releaseArgs = if (scalaVersion.startsWith("3.8")) Seq.empty else Seq("--release", "9")
     val result = os
-      .proc("scala-cli", "compile", "--jvm", "17", releaseArgs, "-S", scalaVersion, targetDir.toString)
+      .proc("scala-cli", "compile", "--jvm", "17", "--bloop-startup-timeout", "180s", releaseArgs, "-S", scalaVersion, targetDir.toString)
       .call(cwd = targetDir, stderr = os.Pipe, stdout = os.Pipe, check = false)
 
     // Only log output if compilation failed or not in quiet mode
@@ -227,6 +252,10 @@ class ExampleRunner(
       val exampleName = resolvedExample.last
       val exampleWorkspace = workspaceRoot / exampleName
       os.makeDir.all(exampleWorkspace)
+
+      // Boot the Bloop daemon once (synchronously) before the parallel compiles below, so they all
+      // connect to a running server instead of racing to start it.
+      BloopWarmup.ensure()
 
       val results = Future
         .sequence(scalaVersions.toSeq.map { version =>
