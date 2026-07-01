@@ -2,7 +2,7 @@ package sloth
 
 /** Small filesystem/bytecode helpers shared by the test modules.
   *
-  * Kept here (testops/src/main) so both tests-jdk9 and tests-jdk25 can use it via dependsOn(testops),
+  * Kept here (testops/src/main) so both tests-jdk11 and tests-jdk25 can use it via dependsOn(testops),
   * and so paths stay version-agnostic instead of hard-coding the current Scala target directory.
   */
 object TestPaths {

@@ -9,7 +9,7 @@ This document contains information for Claude Code (or other AI assistants) work
 - **cli/** - Command-line interface for running transformations (`-release 9`)
 - **testops/** - Development tooling + shared test infra (`ExampleLoader`, `ExampleRunner`, `TestPaths`)
 - **tests/** - Test fixtures only (`src/test/resources/fixtures/examples/`); no sbt module
-- **tests-jdk9/** - Test suites that run on Java 9–11 (analysis + Java-9 runtime/classfile-version proof)
+- **tests-jdk11/** - Test suites that run on Java 11 (analysis + Java-9 runtime/classfile-version proof)
 - **tests-jdk25/** - Test suites that run on Java 24+ (sun.misc.Unsafe warning assertions)
 
 ## Development Tools
@@ -110,16 +110,16 @@ Java-8 stdlib) with `-Yfuture-lazy-vals` (keeps the Unsafe-free VarHandle lazy-v
 Java 9. The test suites are split into two sbt modules by the JVM they need, and a plain `sbt test`
 is intentionally disabled (it errors with a pointer to the two targets):
 
-- **`sbt tests-jdk9`** (module `tests-jdk9`, run on **Java 11**) — pure bytecode-analysis suites
+- **`sbt tests-jdk11`** (module `tests-jdk11`, run on **Java 11**) — pure bytecode-analysis suites
   (`LazyValDetectionTests`, `SemanticLazyValComparisonTests`, `AgentPatchingTests`), the Java-9
   runtime proof (`Jdk9RuntimeTests` runs the agent + VarHandle-patched 3.3–3.7 code), and
-  `ClassfileVersionTests` (asserts the agent jar + core are ≤ v53). Locally there's no JDK 9; use
-  `JAVA_HOME=~/.sdkman/candidates/java/11.0.31-tem` (Java 11 is the oldest sbt-friendly proxy).
+  `ClassfileVersionTests` (asserts the agent jar + core are ≤ v53). Locally:
+  `JAVA_HOME=~/.sdkman/candidates/java/11.0.31-tem`.
 - **`sbt tests-jdk25`** (module `tests-jdk25`, run on **Java 24+**) — `BytecodePatchingTests` and
   `AgentIntegrationTests`, which assert presence/absence of the `sun.misc.Unsafe` warning that only
   newer JDKs emit. Locally: `JAVA_HOME=~/.sdkman/candidates/java/25-graalce`.
 
-CI runs these as two jobs (`test-jdk9` on temurin 11, `test-jdk25` on temurin 25). The harness
+CI runs these as two jobs (`test-jdk11` on temurin 11, `test-jdk25` on temurin 25). The harness
 itself needs Java 11+ (sbt, scala-cli, and testops' jsoniter dependency are >v53), so the actual
 Java-9 floor is guaranteed by `ClassfileVersionTests` (published classes ≤ v53), not by executing
 on Java 9. Java 9/10 are best-effort.
@@ -128,11 +128,11 @@ on Java 9. Java 9/10 are best-effort.
 examples across 10+ Scala versions and is very slow. To verify a full module passes, ask the user.
 
 The `sbt test` invocations in the filtering examples below are illustrative — substitute
-`tests-jdk9` or `tests-jdk25` (or `testsJdk9/testOnly ...`) for the suite you're targeting.
+`tests-jdk11` or `tests-jdk25` (or `testsJdk11/testOnly ...`) for the suite you're targeting.
 
 ```bash
-# Run a specific suite with filtering (preferred). Detection lives in tests-jdk9:
-SELECT_EXAMPLE=simple-lazy-val sbt "testsJdk9/testOnly sloth.LazyValDetectionTests"
+# Run a specific suite with filtering (preferred). Detection lives in tests-jdk11:
+SELECT_EXAMPLE=simple-lazy-val sbt "testsJdk11/testOnly sloth.LazyValDetectionTests"
 
 # A single example's runtime behaviour (warning suite) lives in tests-jdk25:
 SELECT_EXAMPLE=companion-object-lazy-val sbt "testsJdk25/testOnly sloth.BytecodePatchingTests"
@@ -168,7 +168,7 @@ ONLY_SCALA_VERSIONS=3.1.3,3.3.0 sbt test
 SELECT_EXAMPLE=simple-lazy-val ONLY_SCALA_VERSIONS=3.3.0,3.4.3 sbt test
 
 # Test a problematic version in isolation
-ONLY_SCALA_VERSIONS=3.3.0 sbt "testsJdk9/testOnly sloth.LazyValDetectionTests"
+ONLY_SCALA_VERSIONS=3.3.0 sbt "testsJdk11/testOnly sloth.LazyValDetectionTests"
 ```
 
 #### INSPECT_BYTECODE - Enable bytecode inspection on test failures
@@ -185,7 +185,7 @@ INSPECT_BYTECODE=true SELECT_EXAMPLE=multiple-lazy-vals ONLY_SCALA_VERSIONS=3.1.
 
 # Debug a specific test with full bytecode output
 INSPECT_BYTECODE=1 SELECT_EXAMPLE=simple-lazy-val ONLY_SCALA_VERSIONS=3.3.0 \
-  sbt "testsJdk9/testOnly sloth.LazyValDetectionTests"
+  sbt "testsJdk11/testOnly sloth.LazyValDetectionTests"
 ```
 
 **INSPECT_BYTECODE accepts:** `true`, `1`, `yes` (case insensitive)

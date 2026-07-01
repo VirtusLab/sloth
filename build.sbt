@@ -58,8 +58,8 @@ lazy val testops = project
   .dependsOn(core)
 
 // Shared settings for both test modules. Test sources are split by JDK requirement:
-//   - tests-jdk9  : pure bytecode-analysis suites + a runtime proof that the agent and patched
-//                   bytecode actually run on Java 9. Run with `sbt tests-jdk9` on a Java 9 JVM.
+//   - tests-jdk11 : pure bytecode-analysis suites + a runtime proof that the agent and patched
+//                   bytecode actually run on Java 9. Run with `sbt tests-jdk11` on a Java 11 JVM.
 //   - tests-jdk25 : suites that assert presence/absence of the `sun.misc.Unsafe` warning, which
 //                   only newer JDKs emit. Run with `sbt tests-jdk25` on a Java 24+ JVM.
 // Both reuse the fixtures under tests/src/test/resources and the ExampleLoader in testops.
@@ -77,9 +77,9 @@ val commonTestSettings = Seq(
   Test / testOnly := ((Test / testOnly) dependsOn (agent / assembly)).evaluated
 )
 
-lazy val testsJdk9 = project
-  .in(file("tests-jdk9"))
-  .settings(name := "sloth-tests-jdk9")
+lazy val testsJdk11 = project
+  .in(file("tests-jdk11"))
+  .settings(name := "sloth-tests-jdk11")
   .settings(commonTestSettings)
   .dependsOn(core, testops, agent)
 
@@ -122,7 +122,7 @@ lazy val agent = project
     // Published artifact: target Java 9 bytecode so the agent loads on JVMs as old as Java 9
     // (see core for rationale). -Yfuture-lazy-vals keeps the agent's own lazy vals Unsafe-free.
     // The shaded scala/asm classes are already <= v53, so the whole assembled jar stays loadable
-    // on Java 9. Verified by ClassfileVersionTests in tests-jdk9.
+    // on Java 9. Verified by ClassfileVersionTests in tests-jdk11.
     scalacOptions ++= Seq("-release", "9", "-Yfuture-lazy-vals"),
     crossPaths := false,
     autoScalaLibrary := false,
@@ -226,13 +226,13 @@ lazy val root = project
     Test / test := {
       sys.error(
         "`sbt test` is disabled for this build because tests are split by required JVM.\n" +
-          "  - `sbt tests-jdk9`  : bytecode-analysis + Java-9 runtime suites (run on a Java 9 JVM)\n" +
+          "  - `sbt tests-jdk11` : bytecode-analysis + Java-9 runtime suites (run on a Java 11 JVM)\n" +
           "  - `sbt tests-jdk25` : sun.misc.Unsafe warning suites (run on a Java 24+ JVM)"
       )
     },
     addCommandAlias("compileExamples", "testops/runMain sloth.CompileExamplesMain"),
     addCommandAlias("compileExamplesWithPatching", "testops/runMain sloth.CompileExamplesMain --patch"),
-    addCommandAlias("tests-jdk9", "testsJdk9/test"),
+    addCommandAlias("tests-jdk11", "testsJdk11/test"),
     addCommandAlias("tests-jdk25", "testsJdk25/test")
   )
   // Note: test modules are intentionally NOT aggregated, so `sbt test` only hits the root's

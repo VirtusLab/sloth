@@ -8,7 +8,7 @@ import scala.compiletime.uninitialized
   * The agent rewrites Unsafe-based lazy vals into the VarHandle-based scheme, and VarHandle is a
   * Java 9 API. This suite runs the agent (built at `-release:9`) against Scala 3.0-3.7 bytecode on
   * whatever JVM is hosting the tests and asserts the application still produces correct output. When
-  * this suite runs on a Java 9 JVM (the `tests-jdk9` CI job), a green run proves the patched
+  * this suite runs on a Java 11 JVM (the `tests-jdk11` CI job), a green run proves the patched
   * VarHandle bytecode verifies and executes on Java 9 — i.e. the published artifacts work there.
   *
   * Unlike the JDK-24+ suites, this one makes NO assertions about `sun.misc.Unsafe` warnings (Java 9

@@ -27,7 +27,7 @@ jobs:
   # Tests are split by required JVM (see build.sbt). `sbt test` is intentionally disabled; each
   # leg runs its own target on the JVM it needs.
   #
-  # tests-jdk9: pure bytecode-analysis suites + the Java-9 runtime proof. Runs on Java 9 to verify
+  # tests-jdk11: pure bytecode-analysis suites + the Java-9 runtime proof. Runs on Java 11 to verify
   # the published (v53) artifacts actually load and execute on the oldest supported JVM.
   # IMPORTANT: scala-cli-setup installs its own JVM and exports JAVA_HOME, which would clobber the
   # JVM we want sbt to run on. So it MUST run BEFORE setup-java, and we additionally pin JAVA_HOME +
@@ -36,7 +36,7 @@ jobs:
   # Runs on Temurin 11, not 9: the test harness (sbt, scala-cli, and testops' jsoniter dependency)
   # needs Java 11+. The actual Java-9 floor is guaranteed by ClassfileVersionTests (all published
   # classes <= v53) rather than by executing on a Java 9 JVM; Java 9/10 are best-effort.
-  test-jdk9:
+  test-jdk11:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     needs: build
@@ -51,13 +51,13 @@ jobs:
           cache: sbt
       - uses: sbt/setup-sbt@13c2c27693f0ec4a33b1ebefd04c53c4c0ba618a # v1
       - uses: coursier/cache-action@2addd381bd2c931f42d4b734b9d0c9b73aac16fb # v6
-      - name: Run JDK 9 test suite
+      - name: Run JDK 11 test suite
         env:
           JAVA_HOME: ${{ steps.jdk.outputs.path }}
         run: |
           export PATH="$JAVA_HOME/bin:$PATH"
           java -version
-          sbt tests-jdk9
+          sbt tests-jdk11
 
   # tests-jdk25: suites that assert presence/absence of the sun.misc.Unsafe warning, which only
   # newer JDKs emit. Runs on Java 25.
@@ -85,7 +85,7 @@ jobs:
           sbt tests-jdk25
 
   publish:
-    needs: [build, test-jdk9, test-jdk25]
+    needs: [build, test-jdk11, test-jdk25]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

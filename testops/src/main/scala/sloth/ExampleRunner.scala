@@ -116,7 +116,7 @@ class ExampleRunner(
 
     // Run scala-cli compile on JDK 17 (the compiler runtime — needed by both old and new Scala
     // versions). Target Java 9 bytecode (--release 9) so fixtures load on a Java 9 JVM, which the
-    // tests-jdk9 runtime suite requires. This only lowers the classfile version; the lazy-val
+    // tests-jdk11 runtime suite requires. This only lowers the classfile version; the lazy-val
     // scheme (bitmap / Unsafe) is unchanged. Scala 3.8.x cannot emit < v61, so it keeps its
     // default target and is therefore only run on the JDK-25 leg (used as a static reference here).
     val releaseArgs = if (scalaVersion.startsWith("3.8")) Seq.empty else Seq("--release", "9")
