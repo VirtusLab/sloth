@@ -1,4 +1,4 @@
-# LazyValgrade
+# Sloth
 
 A bytecode rewriting tool to enable Scala 3.0-3.7.x compatibility with JDK 26+.
 
@@ -28,7 +28,7 @@ The problem is not just with new code - it's with the entire existing ecosystem:
    - Recompiled with Scala 3.8+, or
    - Patched at the bytecode level
 
-Recompiling the entire ecosystem is impractical and time-consuming. This is where LazyValgrade comes in.
+Recompiling the entire ecosystem is impractical and time-consuming. This is where Sloth comes in.
 
 ### Implementation Differences
 
@@ -40,11 +40,11 @@ Recompiling the entire ecosystem is impractical and time-consuming. This is wher
 
 **Scala 3.8+**: New VarHandle-based implementation without `sun.misc.Unsafe`
 
-LazyValgrade must handle transformations from three distinct implementation families to the 3.8+ implementation.
+Sloth must handle transformations from three distinct implementation families to the 3.8+ implementation.
 
 ## The Solution
 
-LazyValgrade provides bytecode-level transformations using ASM to rewrite lazy val implementations from Scala 3.0-3.7.x to the Scala 3.8.0 implementation.
+Sloth provides bytecode-level transformations using ASM to rewrite lazy val implementations from Scala 3.0-3.7.x to the Scala 3.8.0 implementation.
 
 ### Use Cases
 
