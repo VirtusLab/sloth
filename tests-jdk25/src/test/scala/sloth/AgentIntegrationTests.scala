@@ -55,11 +55,11 @@ class AgentIntegrationTests extends FunSuite {
     os.write(tempDir / "AgentTestApp.scala", testSource)
 
     println(s"Compiling test source with Scala $scalaVersion...")
-    os.proc("scala-cli", "compile", "--jvm", "17", TestPaths.scalaCliServerArgs, "-S", scalaVersion, tempDir.toString)
+    os.proc("scala-cli", "compile", "--jvm", "17", "--bloop-startup-timeout", "180s", "-S", scalaVersion, tempDir.toString)
       .call(cwd = tempDir, stdout = os.Inherit, stderr = os.Inherit)
 
     // Get classpath
-    val cpResult = os.proc("scala-cli", "compile", "--print-classpath", "--jvm", "17", TestPaths.scalaCliServerArgs, "-S", scalaVersion, tempDir.toString)
+    val cpResult = os.proc("scala-cli", "compile", "--print-classpath", "--jvm", "17", "--bloop-startup-timeout", "180s", "-S", scalaVersion, tempDir.toString)
       .call(cwd = tempDir, stderr = os.Pipe, stdout = os.Pipe)
     classpath = cpResult.out.text().trim
 

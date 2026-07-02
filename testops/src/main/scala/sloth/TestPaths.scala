@@ -9,10 +9,6 @@ object TestPaths {
 
   val isCI: Boolean = sys.env.contains("CI")
 
-  /** Extra scala-cli flags for CI: skip Bloop to avoid daemon contention on resource-constrained runners. */
-  val scalaCliServerArgs: Seq[String] =
-    if isCI then Seq("--server=false") else Seq("--bloop-startup-timeout", "180s")
-
   /** Locate the assembled agent jar under agent/target/ without hard-coding the Scala version in
     * the path. The agent sets crossPaths := false so the jar lands directly in agent/target/, but
     * we search recursively to stay robust against build layout changes.
