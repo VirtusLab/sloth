@@ -11,6 +11,20 @@ permissions:
   contents: read
 
 jobs:
+  format:
+    timeout-minutes: 15
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          submodules: true
+      - uses: coursier/cache-action@v8
+        with:
+          ignoreJob: true
+      - uses: VirtusLab/scala-cli-setup@v1
+      - run: scala-cli fmt . --check
+
   build:
     runs-on: ubuntu-latest
     steps:

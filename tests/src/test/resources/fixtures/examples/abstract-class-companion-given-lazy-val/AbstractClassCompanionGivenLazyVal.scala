@@ -12,8 +12,7 @@ abstract class Parser[+T]:
     new Parser.Mapped[T, U](this, f)
 
 object Parser:
-  private final class Mapped[T, +U](underlying: Parser[T], f: T => U)
-      extends Parser[U]:
+  private final class Mapped[T, +U](underlying: Parser[T], f: T => U) extends Parser[U]:
     def parse(input: String): U =
       f(underlying.parse(input))
 

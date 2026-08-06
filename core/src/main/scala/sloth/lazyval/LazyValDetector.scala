@@ -193,9 +193,12 @@ final class LazyValDetector:
       )
 
       version match
-        case ScalaVersion.Unknown(_) if offsetField.isEmpty && bitmapField.isEmpty &&
-          varHandleField.isEmpty && initMethod.isEmpty && !isVolatile(storageField.access) =>
-          debug(s"Skipping field ${storageField.name}: matches $$lzy pattern but has no lazy val infrastructure (likely eager companion object reference)")
+        case ScalaVersion.Unknown(_)
+            if offsetField.isEmpty && bitmapField.isEmpty &&
+              varHandleField.isEmpty && initMethod.isEmpty && !isVolatile(storageField.access) =>
+          debug(
+            s"Skipping field ${storageField.name}: matches $$lzy pattern but has no lazy val infrastructure (likely eager companion object reference)"
+          )
           None
         case _ =>
           Some(
@@ -230,8 +233,8 @@ final class LazyValDetector:
     * Uses the offset mapping built from <clinit> bytecode to find the correct OFFSET field. Searches in both current
     * class and companion class fields.
     *
-    * For bitmap-based lazy vals (3.0-3.2), the OFFSET maps to bitmap field (e.g., "0bitmap$1").
-    * For unsafe/varhandle-based lazy vals (3.3+), the OFFSET maps to storage field (e.g., "a$lzy1").
+    * For bitmap-based lazy vals (3.0-3.2), the OFFSET maps to bitmap field (e.g., "0bitmap$1"). For
+    * unsafe/varhandle-based lazy vals (3.3+), the OFFSET maps to storage field (e.g., "a$lzy1").
     *
     * @return
     *   Tuple of (offsetField, location) where location indicates which class contains the field
@@ -286,8 +289,8 @@ final class LazyValDetector:
 
   /** Finds the bitmap field that corresponds to a storage field.
     *
-    * For 3.0.x-3.2.x, the bitmap field is referenced in <clinit> instead of the lzy field.
-    * The bitmap field has the same index as the storage field: "a$lzy1" -> "0bitmap$1"
+    * For 3.0.x-3.2.x, the bitmap field is referenced in <clinit> instead of the lzy field. The bitmap field has the
+    * same index as the storage field: "a$lzy1" -> "0bitmap$1"
     */
   private def findBitmapFieldForStorage(
       storageFieldName: String,
@@ -365,7 +368,7 @@ final class LazyValDetector:
       // The <clinit> is in the class that contains the OFFSET field
       val clinitClassInfo = offsetFieldLocation match
         case OffsetFieldLocation.InCompanionClass => companionClassInfo.getOrElse(classInfo)
-        case _ => classInfo
+        case _                                    => classInfo
 
       debug(s"Looking for <clinit> in ${clinitClassInfo.name} (offsetLocation=$offsetFieldLocation)")
       val clinit = clinitClassInfo.methods.find(_.name == "<clinit>")
@@ -376,7 +379,9 @@ final class LazyValDetector:
           val hasGetOffsetStatic = bytecode.contains("getOffsetStatic")
           val hasLazyValsGetOffset = bytecode.contains("LazyVals$.getOffset (")
 
-          debug(s"<clinit> checks: getDeclaredField=$hasDeclaredField, getOffsetStatic=$hasGetOffsetStatic, LazyVals.getOffset=$hasLazyValsGetOffset")
+          debug(
+            s"<clinit> checks: getDeclaredField=$hasDeclaredField, getOffsetStatic=$hasGetOffsetStatic, LazyVals.getOffset=$hasLazyValsGetOffset"
+          )
 
           if hasDeclaredField && hasGetOffsetStatic then
             debug("Uses getDeclaredField + getOffsetStatic -> Scala 3.2.x")
@@ -407,7 +412,8 @@ final class LazyValDetector:
             debug("Uses objCAS with Object field -> Scala 3.3.x-3.7.x")
             ScalaVersion.Scala33x_37x
           else
-            val reason = s"Object field with OFFSET but no objCAS in initMethod ${method.name}. Bytecode: ${method.bytecodeText.take(500)}"
+            val reason =
+              s"Object field with OFFSET but no objCAS in initMethod ${method.name}. Bytecode: ${method.bytecodeText.take(500)}"
             warn(reason)
             ScalaVersion.Unknown(reason)
         case None =>
@@ -419,7 +425,8 @@ final class LazyValDetector:
       debug(s"  offsetField=${offsetField.isDefined} initMethod=${initMethod.isDefined}")
       debug(s"  descriptor=${storageField.descriptor} (expected: Ljava/lang/Object;)")
       debug(s"  isVolatile=${isVolatile(storageField.access)}")
-      val reason = s"No pattern matched. offsetField=${offsetField.isDefined} initMethod=${initMethod.isDefined} descriptor=${storageField.descriptor} isVolatile=${isVolatile(storageField.access)}"
+      val reason =
+        s"No pattern matched. offsetField=${offsetField.isDefined} initMethod=${initMethod.isDefined} descriptor=${storageField.descriptor} isVolatile=${isVolatile(storageField.access)}"
       ScalaVersion.Unknown(reason)
 
   /** Checks if access flags indicate a static field. */

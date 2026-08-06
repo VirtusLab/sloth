@@ -96,12 +96,10 @@ sealed trait ClassfileError {
 object ClassfileError {
 
   /** Error during ASM class reading. */
-  final case class ReadError(message: String, cause: Option[Throwable] = None)
-      extends ClassfileError
+  final case class ReadError(message: String, cause: Option[Throwable] = None) extends ClassfileError
 
   /** Error during bytecode dump generation. */
-  final case class DumpError(message: String, cause: Option[Throwable] = None)
-      extends ClassfileError
+  final case class DumpError(message: String, cause: Option[Throwable] = None) extends ClassfileError
 
   /** Invalid or corrupted classfile. */
   final case class InvalidClassfile(

@@ -21,6 +21,7 @@ case class ExampleCompilationResult(
     exampleName: String,
     results: Map[String, VersionCompilationResult]
 ) {
+
   /** Get all unique class file relative paths across all versions */
   def allClassPaths: Set[String] =
     results.values.flatMap(_.classFiles.map(_.relativePath)).toSet

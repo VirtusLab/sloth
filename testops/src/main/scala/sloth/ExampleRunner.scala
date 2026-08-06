@@ -12,13 +12,12 @@ import sloth.patching.BytecodePatcher
 
 /** Single chokepoint that boots the scala-cli Bloop compilation server exactly once per JVM.
   *
-  * The fixtures compile each Scala version in parallel. Starting the Bloop daemon is the only step
-  * that races: many scala-cli clients hitting `ensureBloopRunning` at once on a cold CI runner all
-  * try to spawn the server and time out (`TimeoutException: Future timed out after [30 seconds]`).
-  * Once the daemon is up, every client just connects to it — so we warm it once, behind a `lazy val`
-  * (which the JVM initializes under a lock, blocking concurrent callers until it completes), and only
-  * then let the parallel compilations proceed. Keeping Bloop (vs `--server=false`) preserves its
-  * large incremental-compile speedup.
+  * The fixtures compile each Scala version in parallel. Starting the Bloop daemon is the only step that races: many
+  * scala-cli clients hitting `ensureBloopRunning` at once on a cold CI runner all try to spawn the server and time out
+  * (`TimeoutException: Future timed out after [30 seconds]`). Once the daemon is up, every client just connects to it —
+  * so we warm it once, behind a `lazy val` (which the JVM initializes under a lock, blocking concurrent callers until
+  * it completes), and only then let the parallel compilations proceed. Keeping Bloop (vs `--server=false`) preserves
+  * its large incremental-compile speedup.
   */
 object BloopWarmup {
   // First access boots the daemon; concurrent accessors block on lazy-val init until it's ready.
@@ -125,7 +124,18 @@ class ExampleRunner(
     // default target and is therefore only run on the JDK-25 leg (used as a static reference here).
     val releaseArgs = if (scalaVersion.startsWith("3.8")) Seq.empty else Seq("--release", "9")
     val result = os
-      .proc("scala-cli", "compile", "--jvm", "17", "--bloop-startup-timeout", "180s", releaseArgs, "-S", scalaVersion, targetDir.toString)
+      .proc(
+        "scala-cli",
+        "compile",
+        "--jvm",
+        "17",
+        "--bloop-startup-timeout",
+        "180s",
+        releaseArgs,
+        "-S",
+        scalaVersion,
+        targetDir.toString
+      )
       .call(cwd = targetDir, stderr = os.Pipe, stdout = os.Pipe, check = false)
 
     // Only log output if compilation failed or not in quiet mode
@@ -357,11 +367,24 @@ class ExampleRunner(
           detectionResult match {
             case LazyValDetectionResult.NoLazyVals => // OK
             case LazyValDetectionResult.LazyValsFound(lazyVals, ScalaVersion.Unknown(reason)) =>
-              break(Left(s"Detected Unknown version for ${group.primaryName} compiled with Scala $scalaVersion: $reason. LazyVals: ${lazyVals.map(lv => s"${lv.name} (version=${lv.version})").mkString(", ")}"))
+              break(
+                Left(
+                  s"Detected Unknown version for ${group.primaryName} compiled with Scala $scalaVersion: $reason. LazyVals: ${lazyVals
+                      .map(lv => s"${lv.name} (version=${lv.version})")
+                      .mkString(", ")}"
+                )
+              )
             case LazyValDetectionResult.LazyValsFound(_, _) => // OK
             case LazyValDetectionResult.MixedVersions(lazyVals) =>
-              val versionBreakdown = lazyVals.groupBy(_.version).map { case (v, lvs) => s"$v: ${lvs.map(_.name).mkString(", ")}" }.mkString("; ")
-              break(Left(s"Detected mixed versions for ${group.primaryName} compiled with Scala $scalaVersion. Breakdown: $versionBreakdown"))
+              val versionBreakdown = lazyVals
+                .groupBy(_.version)
+                .map { case (v, lvs) => s"$v: ${lvs.map(_.name).mkString(", ")}" }
+                .mkString("; ")
+              break(
+                Left(
+                  s"Detected mixed versions for ${group.primaryName} compiled with Scala $scalaVersion. Breakdown: $versionBreakdown"
+                )
+              )
           }
         }
 
@@ -481,7 +504,9 @@ class ExampleRunner(
     }
 
     if (failCount > 0) {
-      Left(s"Patching completed with errors: $successCount succeeded, $failCount failed. Errors:\n${errors.mkString("\n")}")
+      Left(
+        s"Patching completed with errors: $successCount succeeded, $failCount failed. Errors:\n${errors.mkString("\n")}"
+      )
     } else if (successCount > 0) {
       Right(s"Patched $successCount versions successfully")
     } else {

@@ -5,4 +5,6 @@ object MultipleLazyVals:
   lazy val fourth: Boolean = true
 
 @main def main() =
-  println(s"${MultipleLazyVals.first}, ${MultipleLazyVals.second}, ${MultipleLazyVals.third}, ${MultipleLazyVals.fourth}")
+  println(
+    s"${MultipleLazyVals.first}, ${MultipleLazyVals.second}, ${MultipleLazyVals.third}, ${MultipleLazyVals.fourth}"
+  )

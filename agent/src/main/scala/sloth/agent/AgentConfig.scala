@@ -34,13 +34,11 @@ object AgentConfig {
 
   /** Parse agent config from the agentArgs string.
     *
-    * Format: comma-separated options, e.g.:
-    *   "verbose,include=com.example.,exclude=com.example.internal."
+    * Format: comma-separated options, e.g.: "verbose,include=com.example.,exclude=com.example.internal."
     *
     * Log level options (each sets the scribe log level):
     *   - verbose: Debug level
-    *   - trace: Trace level
-    *   (default is Warn if none specified)
+    *   - trace: Trace level (default is Warn if none specified)
     */
   def parse(agentArgs: String): AgentConfig = {
     if (agentArgs == null || agentArgs.trim.isEmpty) return AgentConfig()

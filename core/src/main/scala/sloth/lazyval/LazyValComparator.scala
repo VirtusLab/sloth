@@ -75,17 +75,19 @@ object LazyValDifference:
 
 /** Compares lazy val implementations between two classes.
   *
-  * Focuses specifically on lazy val implementation patterns,
-  * ignoring other bytecode differences.
+  * Focuses specifically on lazy val implementation patterns, ignoring other bytecode differences.
   */
 final class LazyValComparator:
   import scribe.{info, debug}
 
   /** Compares lazy val implementations in two classes.
     *
-    * @param class1 First class
-    * @param class2 Second class
-    * @return Comparison result focusing on lazy vals
+    * @param class1
+    *   First class
+    * @param class2
+    *   Second class
+    * @return
+    *   Comparison result focusing on lazy vals
     */
   def compare(
       class1: ClassInfo,
@@ -136,16 +138,16 @@ final class LazyValComparator:
   /** Extracts lazy vals from detection result. */
   private def extractLazyVals(result: LazyValDetectionResult): Seq[LazyValInfo] =
     result match
-      case LazyValDetectionResult.NoLazyVals => Seq.empty
+      case LazyValDetectionResult.NoLazyVals                 => Seq.empty
       case LazyValDetectionResult.LazyValsFound(lazyVals, _) => lazyVals
-      case LazyValDetectionResult.MixedVersions(lazyVals) => lazyVals
+      case LazyValDetectionResult.MixedVersions(lazyVals)    => lazyVals
 
   /** Gets overall version from detection result. */
   private def getOverallVersion(result: LazyValDetectionResult): ScalaVersion =
     result match
-      case LazyValDetectionResult.NoLazyVals => ScalaVersion.Unknown("no lazy vals detected")
+      case LazyValDetectionResult.NoLazyVals                => ScalaVersion.Unknown("no lazy vals detected")
       case LazyValDetectionResult.LazyValsFound(_, version) => version
-      case LazyValDetectionResult.MixedVersions(lazyVals) =>
+      case LazyValDetectionResult.MixedVersions(lazyVals)   =>
         // Return most common version
         lazyVals.groupBy(_.version).maxBy(_._2.size)._1
 
@@ -221,19 +223,19 @@ final class LazyValComparator:
     (lv1.offsetField, lv2.offsetField) match
       case (Some(_), None) => diffs += "offset field only in first"
       case (None, Some(_)) => diffs += "offset field only in second"
-      case _ => ()
+      case _               => ()
 
     // Check bitmap field
     (lv1.bitmapField, lv2.bitmapField) match
       case (Some(_), None) => diffs += "bitmap field only in first"
       case (None, Some(_)) => diffs += "bitmap field only in second"
-      case _ => ()
+      case _               => ()
 
     // Check VarHandle field
     (lv1.varHandleField, lv2.varHandleField) match
       case (Some(_), None) => diffs += "VarHandle field only in first"
       case (None, Some(_)) => diffs += "VarHandle field only in second"
-      case _ => ()
+      case _               => ()
 
     // Check storage field descriptor
     if lv1.storageField.descriptor != lv2.storageField.descriptor then

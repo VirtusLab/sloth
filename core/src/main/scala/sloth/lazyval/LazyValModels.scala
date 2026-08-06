@@ -32,15 +32,15 @@ enum ScalaVersion:
 
   def isLegacy: Boolean = this match
     case Scala30x_31x | Scala32x | Scala33x_37x => true
-    case _ => false
+    case _                                      => false
 
   def isBitmapBased: Boolean = this match
     case Scala30x_31x | Scala32x => true
-    case _ => false
+    case _                       => false
 
   def needsTransformation: Boolean = this match
     case Scala30x_31x | Scala32x | Scala33x_37x => true
-    case _ => false
+    case _                                      => false
 
 /** Information about a single lazy val found in a class. */
 final case class LazyValInfo(

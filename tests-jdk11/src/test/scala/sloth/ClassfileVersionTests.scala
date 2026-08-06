@@ -2,11 +2,11 @@ package sloth
 
 import munit.FunSuite
 
-/** Guards that the published artifacts are emitted at Java 9 bytecode level (classfile major
-  * version <= 53) so they load on a Java 9 JVM.
+/** Guards that the published artifacts are emitted at Java 9 bytecode level (classfile major version <= 53) so they
+  * load on a Java 9 JVM.
   *
-  *   - The assembled agent jar bundles our shaded code plus the shaded scala/asm/etc. runtime;
-  *     EVERY class in it must be <= v53 for the agent to attach on Java 9.
+  *   - The assembled agent jar bundles our shaded code plus the shaded scala/asm/etc. runtime; EVERY class in it must
+  *     be <= v53 for the agent to attach on Java 9.
   *   - The core library's own classes (the other published artifact) must be <= v53.
   *
   * 53 = Java 9, 52 = Java 8 (both fine on a Java 9 runtime); 61 = Java 17 (would fail to load).
@@ -45,8 +45,9 @@ class ClassfileVersionTests extends FunSuite {
     )
   }
 
-  /** The scala target directory name of the running build (e.g. "scala-3.3.8"), taken from this
-    * test's own code-source path so it always matches the current scalaVersion. */
+  /** The scala target directory name of the running build (e.g. "scala-3.3.8"), taken from this test's own code-source
+    * path so it always matches the current scalaVersion.
+    */
   private def currentScalaTargetDir: String =
     Option(getClass.getProtectionDomain.getCodeSource)
       .map(cs => os.Path(java.nio.file.Paths.get(cs.getLocation.toURI)))

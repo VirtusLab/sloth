@@ -108,7 +108,7 @@ trait ExampleLoader {
     sys.env.get("INSPECT_BYTECODE").exists { value =>
       value.toLowerCase match {
         case "true" | "1" | "yes" => true
-        case _                     => false
+        case _                    => false
       }
     }
   }
@@ -261,7 +261,8 @@ trait ExampleLoader {
     import scala.sys.process._
 
     try {
-      val result = os.proc("javap", "-v", "-p", classFile.absolutePath.toString)
+      val result = os
+        .proc("javap", "-v", "-p", classFile.absolutePath.toString)
         .call(check = false)
 
       if (result.exitCode == 0) {

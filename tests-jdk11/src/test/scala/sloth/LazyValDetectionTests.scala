@@ -147,7 +147,11 @@ class LazyValDetectionTests extends FunSuite with ExampleLoader {
                 // IMPORTANT: Tests should never detect Unknown version since we compile with known Scala 3 versions
                 version match {
                   case ScalaVersion.Unknown(reason) =>
-                    fail(s"Detected Unknown version for known Scala $scalaVersion - this indicates a bug in detection logic. Reason: $reason. LazyVals: ${lazyVals.map(lv => s"${lv.name} (version=${lv.version})").mkString(", ")}")
+                    fail(
+                      s"Detected Unknown version for known Scala $scalaVersion - this indicates a bug in detection logic. Reason: $reason. LazyVals: ${lazyVals
+                          .map(lv => s"${lv.name} (version=${lv.version})")
+                          .mkString(", ")}"
+                    )
                   case _ => // OK
                 }
 
@@ -214,8 +218,13 @@ class LazyValDetectionTests extends FunSuite with ExampleLoader {
                 }
 
               case LazyValDetectionResult.MixedVersions(lazyVals) =>
-                val versionBreakdown = lazyVals.groupBy(_.version).map { case (v, lvs) => s"$v: ${lvs.map(_.name).mkString(", ")}" }.mkString("; ")
-                fail(s"Unexpected mixed versions for known Scala $scalaVersion - this indicates a bug in detection logic. Breakdown: $versionBreakdown")
+                val versionBreakdown = lazyVals
+                  .groupBy(_.version)
+                  .map { case (v, lvs) => s"$v: ${lvs.map(_.name).mkString(", ")}" }
+                  .mkString("; ")
+                fail(
+                  s"Unexpected mixed versions for known Scala $scalaVersion - this indicates a bug in detection logic. Breakdown: $versionBreakdown"
+                )
             }
           }
         }

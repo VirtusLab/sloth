@@ -7,12 +7,11 @@ import sloth.lazyval.SemanticLazyValComparator
 import java.nio.file.Files
 import java.io.ByteArrayInputStream
 
-/** Tests for SlothTransformer — the agent's ClassFileTransformer that uses
-  * group-based patching via BytecodePatcher.patch(group).
+/** Tests for SlothTransformer — the agent's ClassFileTransformer that uses group-based patching via
+  * BytecodePatcher.patch(group).
   *
-  * Verifies that the transformer correctly patches lazy val bytecode when classes
-  * are loaded through a MockClassLoader, including companion pair handling where
-  * loading order may vary.
+  * Verifies that the transformer correctly patches lazy val bytecode when classes are loaded through a MockClassLoader,
+  * including companion pair handling where loading order may vary.
   */
 class AgentPatchingTests extends FunSuite with ExampleLoader {
 
@@ -24,16 +23,30 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
   override val quietTests: Boolean = true
 
   val testVersions: Seq[String] = Seq(
-    "3.0.2", "3.1.3", "3.2.2",
-    "3.3.0", "3.3.6", "3.4.3", "3.5.2", "3.6.4", "3.7.3",
+    "3.0.2",
+    "3.1.3",
+    "3.2.2",
+    "3.3.0",
+    "3.3.6",
+    "3.4.3",
+    "3.5.2",
+    "3.6.4",
+    "3.7.3",
     "3.8.1"
   )
 
   override def requiredScalaVersions: Seq[String] = testVersions
 
   val patchableVersions: Set[String] = Set(
-    "3.0.2", "3.1.3", "3.2.2",
-    "3.3.0", "3.3.6", "3.4.3", "3.5.2", "3.6.4", "3.7.3"
+    "3.0.2",
+    "3.1.3",
+    "3.2.2",
+    "3.3.0",
+    "3.3.6",
+    "3.4.3",
+    "3.5.2",
+    "3.6.4",
+    "3.7.3"
   )
 
   private def log(msg: => String): Unit = if !quietTests then println(msg)
@@ -54,8 +67,7 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
       .replace()
   }
 
-  /** ClassLoader that serves class bytes from an in-memory map.
-    * Keys are resource names like "Foo$.class".
+  /** ClassLoader that serves class bytes from an in-memory map. Keys are resource names like "Foo$.class".
     */
   class MockClassLoader(classes: Map[String, Array[Byte]]) extends ClassLoader(null) {
     override def getResourceAsStream(name: String): java.io.InputStream =
@@ -74,10 +86,14 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
 
   /** Simulate class loading through the transformer in a given order.
     *
-    * @param transformer fresh transformer instance (stateful due to companion buffer)
-    * @param classBytesMap internalName -> original bytes
-    * @param loadOrder sequence of internal names in desired loading order
-    * @return map of internalName -> patched bytes (only classes that were actually patched)
+    * @param transformer
+    *   fresh transformer instance (stateful due to companion buffer)
+    * @param classBytesMap
+    *   internalName -> original bytes
+    * @param loadOrder
+    *   sequence of internal names in desired loading order
+    * @return
+    *   map of internalName -> patched bytes (only classes that were actually patched)
     */
   def simulateLoading(
       transformer: SlothTransformer,
@@ -96,8 +112,8 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
       if (example.metadata.expectedClasses.exists(_.lazyVals.nonEmpty)) {
         log(s"\n[${example.name}] Testing agent transformer patching")
 
-        val compiledPatchableVersions = patchableVersions.filter(v =>
-          example.compilationResult.results.get(v).exists(_.success))
+        val compiledPatchableVersions =
+          patchableVersions.filter(v => example.compilationResult.results.get(v).exists(_.success))
 
         // Get 3.8 reference bytes for semantic comparison
         val ref38Result = example.compilationResult.results.get("3.8.1").filter(_.success)
@@ -113,8 +129,10 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
           patched.foreach { case (internalName, patchedBytes) =>
             // Verify patched bytes are parseable
             val parsed = ClassfileParser.parse(patchedBytes)
-            assert(parsed.isRight,
-              s"Patched classfile should be parseable for $internalName ($version): ${parsed.left.getOrElse("")}")
+            assert(
+              parsed.isRight,
+              s"Patched classfile should be parseable for $internalName ($version): ${parsed.left.getOrElse("")}"
+            )
 
             // Semantic comparison with 3.8 reference if available
             ref38Result.foreach { ref38 =>
@@ -125,12 +143,16 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
                 val refClassInfo = ClassfileParser.parse(refBytes).toOption.get
                 val patchedClassInfo = parsed.toOption.get
                 val comparison = SemanticLazyValComparator.compare(patchedClassInfo, refClassInfo)
-                assert(comparison.areIdentical,
-                  s"[${example.name}/$version] Patched $internalName should be semantically identical to 3.8, but got: $comparison")
+                assert(
+                  comparison.areIdentical,
+                  s"[${example.name}/$version] Patched $internalName should be semantically identical to 3.8, but got: $comparison"
+                )
               }
             }
 
-            log(s"  [$version] $internalName: Patched (${classBytesMap(internalName).length} -> ${patchedBytes.length} bytes)")
+            log(
+              s"  [$version] $internalName: Patched (${classBytesMap(internalName).length} -> ${patchedBytes.length} bytes)"
+            )
           }
         }
       }
@@ -142,8 +164,8 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
     // Focus on examples where companion pairing matters for lazy val patching.
     examples.foreach { example =>
       if (example.metadata.expectedClasses.exists(_.lazyVals.nonEmpty)) {
-        val compiledPatchableVersions = patchableVersions.filter(v =>
-          example.compilationResult.results.get(v).exists(_.success))
+        val compiledPatchableVersions =
+          patchableVersions.filter(v => example.compilationResult.results.get(v).exists(_.success))
 
         compiledPatchableVersions.foreach { version =>
           val classBytesMap = buildClassBytesMap(example, version)
@@ -190,8 +212,10 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
                         patched.get(name).foreach { patchedBytes =>
                           val patchedClassInfo = ClassfileParser.parse(patchedBytes).toOption.get
                           val comparison = SemanticLazyValComparator.compare(patchedClassInfo, refClassInfo)
-                          assert(comparison.areIdentical,
-                            s"[${example.name}/$version] $label order: $name should be semantically identical to 3.8, but got: $comparison")
+                          assert(
+                            comparison.areIdentical,
+                            s"[${example.name}/$version] $label order: $name should be semantically identical to 3.8, but got: $comparison"
+                          )
                         }
                       }
                     }
@@ -219,8 +243,10 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
             val allNames = classBytesMap.keys.toSeq
             val patched = simulateLoading(transformer, classBytesMap, allNames)
 
-            assert(patched.isEmpty,
-              s"[${example.name}] 3.8+ classes should all return null (not be patched), but got: ${patched.keySet}")
+            assert(
+              patched.isEmpty,
+              s"[${example.name}] 3.8+ classes should all return null (not be patched), but got: ${patched.keySet}"
+            )
             log(s"  [3.8.1] All classes returned null (as expected)")
           }
         }
@@ -240,8 +266,10 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
           val allNames = classBytesMap.keys.toSeq
           val patched = simulateLoading(transformer, classBytesMap, allNames)
 
-          assert(patched.isEmpty,
-            s"[${example.name}/$version] Non-lazy-val classes should all return null, but got: ${patched.keySet}")
+          assert(
+            patched.isEmpty,
+            s"[${example.name}/$version] Non-lazy-val classes should all return null, but got: ${patched.keySet}"
+          )
           log(s"  [$version] All classes returned null (as expected)")
         }
       }
@@ -255,7 +283,9 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
 
         val firstPatchableVersion = patchableVersions
           .filter(v => example.compilationResult.results.get(v).exists(_.success))
-          .toSeq.sorted.headOption
+          .toSeq
+          .sorted
+          .headOption
 
         firstPatchableVersion.foreach { version =>
           val classBytesMap = buildClassBytesMap(example, version)
@@ -273,8 +303,10 @@ class AgentPatchingTests extends FunSuite with ExampleLoader {
             val transformer2 = new SlothTransformer(AgentConfig())
             val repatched = simulateLoading(transformer2, patchedClassBytesMap, allNames)
 
-            assert(repatched.isEmpty,
-              s"[${example.name}/$version] Re-patching should return null for all classes, but got: ${repatched.keySet}")
+            assert(
+              repatched.isEmpty,
+              s"[${example.name}/$version] Re-patching should return null for all classes, but got: ${repatched.keySet}"
+            )
             log(s"  [$version] Idempotent (all return null on re-patch)")
           }
         }

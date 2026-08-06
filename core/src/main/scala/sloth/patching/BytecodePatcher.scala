@@ -29,6 +29,7 @@ object BytecodePatcher {
   /** Result of a patching operation */
   sealed trait PatchResult
   object PatchResult {
+
     /** Single classfile was patched */
     case class PatchedSingle(name: String, bytes: Array[Byte]) extends PatchResult
 
@@ -89,7 +90,7 @@ object BytecodePatcher {
       val detectionResult = LazyValDetector.detect(classInfo, None)
 
       val (lazyVals, version) = detectionResult match {
-        case LazyValDetectionResult.NoLazyVals => return PatchResult.NotApplicable
+        case LazyValDetectionResult.NoLazyVals              => return PatchResult.NotApplicable
         case LazyValDetectionResult.LazyValsFound(lvs, ver) => (lvs, ver)
         case LazyValDetectionResult.MixedVersions(lvs) =>
           return PatchResult.Failed(buildDiagnostic("Mixed Scala versions detected", name, classInfo, lvs))
@@ -98,8 +99,9 @@ object BytecodePatcher {
       // Dispatch to version-specific patching
       version match {
         case ScalaVersion.Scala30x_31x => patchScala30x_31x(bytes, classInfo, lazyVals, name, classLoader = classLoader)
-        case ScalaVersion.Scala32x => patchScala32x(bytes, classInfo, lazyVals, name, classLoader = classLoader)
-        case ScalaVersion.Scala33x_37x => patchScala33x_37x(bytes, classInfo, lazyVals, name, None, None, classLoader = classLoader)
+        case ScalaVersion.Scala32x     => patchScala32x(bytes, classInfo, lazyVals, name, classLoader = classLoader)
+        case ScalaVersion.Scala33x_37x =>
+          patchScala33x_37x(bytes, classInfo, lazyVals, name, None, None, classLoader = classLoader)
         case ScalaVersion.Scala38Plus => PatchResult.NotApplicable
         case ScalaVersion.Unknown(reason) =>
           PatchResult.Failed(buildDiagnostic(s"Unknown Scala version detected: $reason", name, classInfo, lazyVals))
@@ -134,7 +136,10 @@ object BytecodePatcher {
           (objLvs, Seq.empty, objVer)
         case (LazyValDetectionResult.NoLazyVals, LazyValDetectionResult.LazyValsFound(clsLvs, clsVer)) =>
           (Seq.empty, clsLvs, clsVer)
-        case (LazyValDetectionResult.LazyValsFound(objLvs, objVer), LazyValDetectionResult.LazyValsFound(clsLvs, clsVer)) =>
+        case (
+              LazyValDetectionResult.LazyValsFound(objLvs, objVer),
+              LazyValDetectionResult.LazyValsFound(clsLvs, clsVer)
+            ) =>
           // Both have lazy vals — versions MUST match. A mismatch is always a bug.
           if (objVer != clsVer) {
             val diag = new StringBuilder
@@ -146,7 +151,10 @@ object BytecodePatcher {
             }
             diag.append(s"  Lazy vals (${objLvs.size}):\n")
             objLvs.foreach { lv =>
-              diag.append(s"    ${lv.name} (index=${lv.index}, version=${lv.version}, offset=${lv.offsetField.map(_.name)}, varHandle=${lv.varHandleField.map(_.name)}, bitmap=${lv.bitmapField.map(_.name)}, init=${lv.initMethod.map(_.name)})\n")
+              diag.append(
+                s"    ${lv.name} (index=${lv.index}, version=${lv.version}, offset=${lv.offsetField.map(_.name)}, varHandle=${lv.varHandleField
+                    .map(_.name)}, bitmap=${lv.bitmapField.map(_.name)}, init=${lv.initMethod.map(_.name)})\n"
+              )
             }
             diag.append(s"\n--- Companion class: $className (detected as $clsVer) ---\n")
             diag.append(s"  Fields:\n")
@@ -155,17 +163,33 @@ object BytecodePatcher {
             }
             diag.append(s"  Lazy vals (${clsLvs.size}):\n")
             clsLvs.foreach { lv =>
-              diag.append(s"    ${lv.name} (index=${lv.index}, version=${lv.version}, offset=${lv.offsetField.map(_.name)}, varHandle=${lv.varHandleField.map(_.name)}, bitmap=${lv.bitmapField.map(_.name)}, init=${lv.initMethod.map(_.name)})\n")
+              diag.append(
+                s"    ${lv.name} (index=${lv.index}, version=${lv.version}, offset=${lv.offsetField.map(_.name)}, varHandle=${lv.varHandleField
+                    .map(_.name)}, bitmap=${lv.bitmapField.map(_.name)}, init=${lv.initMethod.map(_.name)})\n"
+              )
             }
             return PatchResult.Failed(diag.toString())
           }
           (objLvs, clsLvs, objVer)
         case (LazyValDetectionResult.MixedVersions(lvs), _) =>
-          val allLvs = lvs ++ (classDetectionResult match { case LazyValDetectionResult.LazyValsFound(l, _) => l; case _ => Seq.empty })
-          return PatchResult.Failed(buildDiagnostic("Mixed Scala versions detected in companion object", companionObjectName, companionObjectInfo, allLvs))
+          val allLvs = lvs ++ (classDetectionResult match {
+            case LazyValDetectionResult.LazyValsFound(l, _) => l; case _ => Seq.empty
+          })
+          return PatchResult.Failed(
+            buildDiagnostic(
+              "Mixed Scala versions detected in companion object",
+              companionObjectName,
+              companionObjectInfo,
+              allLvs
+            )
+          )
         case (_, LazyValDetectionResult.MixedVersions(lvs)) =>
-          val allLvs = (objectDetectionResult match { case LazyValDetectionResult.LazyValsFound(l, _) => l; case _ => Seq.empty }) ++ lvs
-          return PatchResult.Failed(buildDiagnostic("Mixed Scala versions detected in companion class", className, classInfo, allLvs))
+          val allLvs = (objectDetectionResult match {
+            case LazyValDetectionResult.LazyValsFound(l, _) => l; case _ => Seq.empty
+          }) ++ lvs
+          return PatchResult.Failed(
+            buildDiagnostic("Mixed Scala versions detected in companion class", className, classInfo, allLvs)
+          )
       }
 
       // Already in target format — nothing to patch
@@ -194,10 +218,14 @@ object BytecodePatcher {
             case (true, true) =>
               // BOTH have lazy vals - need to patch both independently
               patchCompanionPairBothHaveLazyVals30x_31x(
-                companionObjectName, className,
-                companionObjectInfo, classInfo,
-                companionObjectBytes, classBytes,
-                objectLazyVals, classLazyVals,
+                companionObjectName,
+                className,
+                companionObjectInfo,
+                classInfo,
+                companionObjectBytes,
+                classBytes,
+                objectLazyVals,
+                classLazyVals,
                 classLoader = classLoader
               )
             case (false, false) =>
@@ -223,10 +251,14 @@ object BytecodePatcher {
             case (true, true) =>
               // BOTH have lazy vals - need to patch both independently
               patchCompanionPairBothHaveLazyVals30x_31x(
-                companionObjectName, className,
-                companionObjectInfo, classInfo,
-                companionObjectBytes, classBytes,
-                objectLazyVals, classLazyVals,
+                companionObjectName,
+                className,
+                companionObjectInfo,
+                classInfo,
+                companionObjectBytes,
+                classBytes,
+                objectLazyVals,
+                classLazyVals,
                 classLoader = classLoader
               )
             case (false, false) =>
@@ -238,7 +270,8 @@ object BytecodePatcher {
           (objectLazyVals.nonEmpty, classLazyVals.nonEmpty) match {
             case (true, false) =>
               // Only object has lazy vals
-              val hasCompanionOffset = objectLazyVals.exists(_.offsetFieldLocation == OffsetFieldLocation.InCompanionClass)
+              val hasCompanionOffset =
+                objectLazyVals.exists(_.offsetFieldLocation == OffsetFieldLocation.InCompanionClass)
               if (hasCompanionOffset) {
                 patchScala33x_37x(
                   companionObjectBytes,
@@ -249,7 +282,15 @@ object BytecodePatcher {
                   classLoader = classLoader
                 )
               } else {
-                patchScala33x_37x(companionObjectBytes, companionObjectInfo, objectLazyVals, companionObjectName, None, None, classLoader = classLoader)
+                patchScala33x_37x(
+                  companionObjectBytes,
+                  companionObjectInfo,
+                  objectLazyVals,
+                  companionObjectName,
+                  None,
+                  None,
+                  classLoader = classLoader
+                )
               }
             case (false, true) =>
               // Only class has lazy vals - patch as standalone
@@ -257,10 +298,14 @@ object BytecodePatcher {
             case (true, true) =>
               // BOTH have lazy vals - need to patch both independently
               patchCompanionPairBothHaveLazyVals33x_37x(
-                companionObjectName, className,
-                companionObjectInfo, classInfo,
-                companionObjectBytes, classBytes,
-                objectLazyVals, classLazyVals,
+                companionObjectName,
+                className,
+                companionObjectInfo,
+                classInfo,
+                companionObjectBytes,
+                classBytes,
+                objectLazyVals,
+                classLazyVals,
                 classLoader = classLoader
               )
             case (false, false) =>
@@ -270,7 +315,14 @@ object BytecodePatcher {
         case ScalaVersion.Scala38Plus => PatchResult.NotApplicable
         case ScalaVersion.Unknown(reason) =>
           val allLvs = objectLazyVals ++ classLazyVals
-          PatchResult.Failed(buildDiagnostic(s"Unknown Scala version detected: $reason", companionObjectName, companionObjectInfo, allLvs))
+          PatchResult.Failed(
+            buildDiagnostic(
+              s"Unknown Scala version detected: $reason",
+              companionObjectName,
+              companionObjectInfo,
+              allLvs
+            )
+          )
       }
   }
 
@@ -296,7 +348,7 @@ object BytecodePatcher {
     lazyVals.foreach { lv =>
       val versionStr = lv.version match {
         case ScalaVersion.Unknown(reason) => s"Unknown($reason)"
-        case other => other.toString
+        case other                        => other.toString
       }
       sb.append(s"    ${lv.name} (index=${lv.index}, version=$versionStr)\n")
     }
@@ -309,8 +361,8 @@ object BytecodePatcher {
 
   /** Patches Scala 3.0-3.1 lazy vals to 3.8+ format.
     *
-    * Transforms bitmap-based lazy vals with inline initialization to VarHandle-based
-    * implementation with separate lzyINIT methods, matching the 3.8+ pattern.
+    * Transforms bitmap-based lazy vals with inline initialization to VarHandle-based implementation with separate
+    * lzyINIT methods, matching the 3.8+ pattern.
     *
     * @param companionInfo
     *   Optional tuple of (className, classInfo, classBytes) for companion class that contains OFFSET fields
@@ -440,16 +492,17 @@ object BytecodePatcher {
       while (current != null) {
         current match {
           case fieldInsn: FieldInsnNode
-            if fieldInsn.getOpcode == PUTSTATIC &&
-               fieldInsn.desc == "J" &&
-               fieldInsn.name.matches("OFFSET\\$_m_\\d+") =>
+              if fieldInsn.getOpcode == PUTSTATIC &&
+                fieldInsn.desc == "J" &&
+                fieldInsn.name.matches("OFFSET\\$_m_\\d+") =>
             // Found PUTSTATIC for OFFSET$_m_N. Walk backwards to find GETSTATIC LazyVals$.MODULE$
             var prev = current.getPrevious
             var removeCount = 0
             while (prev != null && removeCount < 10) {
               prev match {
-                case gs: FieldInsnNode if gs.getOpcode == GETSTATIC &&
-                    gs.owner == LazyValsObj && gs.name == "MODULE$" =>
+                case gs: FieldInsnNode
+                    if gs.getOpcode == GETSTATIC &&
+                      gs.owner == LazyValsObj && gs.name == "MODULE$" =>
                   var temp = prev
                   while (temp != null && temp != current.getNext) {
                     toRemove += temp
@@ -511,14 +564,16 @@ object BytecodePatcher {
     storageFieldDescriptors.foreach { case (lv, storageFieldName, _) =>
       val varHandleName = s"${storageFieldName}$$lzyHandle"
       if (!classNode.fields.asScala.exists(_.name == varHandleName)) {
-        classNode.fields.add(new FieldNode(
-          ASM9,
-          ACC_PRIVATE | ACC_STATIC | ACC_FINAL,
-          varHandleName,
-          "Ljava/lang/invoke/VarHandle;",
-          null,
-          null
-        ))
+        classNode.fields.add(
+          new FieldNode(
+            ASM9,
+            ACC_PRIVATE | ACC_STATIC | ACC_FINAL,
+            varHandleName,
+            "Ljava/lang/invoke/VarHandle;",
+            null,
+            null
+          )
+        )
       }
     }
 
@@ -547,12 +602,17 @@ object BytecodePatcher {
         val computation = extractComputation30x_31x(accessor)
 
         // Replace accessor body with 3.8+ pattern
-        replaceAccessor30x_31x(accessor, classInternalName, storageFieldName, varHandleName,
-          lzyInitName, originalDesc)
+        replaceAccessor30x_31x(accessor, classInternalName, storageFieldName, varHandleName, lzyInitName, originalDesc)
 
         // Generate lzyINIT method
-        val lzyInit = generateLzyInit30x_31x(classInternalName, storageFieldName, varHandleName,
-          lzyInitName, originalDesc, computation)
+        val lzyInit = generateLzyInit30x_31x(
+          classInternalName,
+          storageFieldName,
+          varHandleName,
+          lzyInitName,
+          originalDesc,
+          computation
+        )
         classNode.methods.add(lzyInit)
       }
     }
@@ -564,8 +624,8 @@ object BytecodePatcher {
   /** Extracts the computation instructions from a 3.0-3.1 accessor method.
     *
     * In 3.0-3.1 bytecode, the computation is between the CAS IFEQ and either:
-    * - The first store to slot 5 (xSTORE 5) for normal computations
-    * - The end of the try-catch block (for computations that always throw)
+    *   - The first store to slot 5 (xSTORE 5) for normal computations
+    *   - The end of the try-catch block (for computations that always throw)
     *
     * Returns cloned instructions with a proper label map so that JumpInsnNodes work correctly.
     */
@@ -594,21 +654,22 @@ object BytecodePatcher {
     // This gives us the boundary for always-throwing computations
     val tryCatchEndLabels: Set[LabelNode] = accessor.tryCatchBlocks.asScala.collect {
       case tcb if {
-        // Check if handler code calls setFlag (indicating it's the lazy val exception handler)
-        var n = tcb.handler.getNext
-        var isSetFlagHandler = false
-        var checked = 0
-        while (n != null && checked < 10 && !isSetFlagHandler) {
-          n match {
-            case m: MethodInsnNode if m.owner == LazyValsObj && m.name == "setFlag" =>
-              isSetFlagHandler = true
-            case _ =>
-          }
-          n = n.getNext
-          checked += 1
-        }
-        isSetFlagHandler
-      } => tcb.end
+            // Check if handler code calls setFlag (indicating it's the lazy val exception handler)
+            var n = tcb.handler.getNext
+            var isSetFlagHandler = false
+            var checked = 0
+            while (n != null && checked < 10 && !isSetFlagHandler) {
+              n match {
+                case m: MethodInsnNode if m.owner == LazyValsObj && m.name == "setFlag" =>
+                  isSetFlagHandler = true
+                case _ =>
+              }
+              n = n.getNext
+              checked += 1
+            }
+            isSetFlagHandler
+          } =>
+        tcb.end
     }.toSet
 
     // First pass: collect raw instructions (including labels) up to xSTORE 5 or try-catch end
@@ -632,13 +693,13 @@ object BytecodePatcher {
     val labelMap = new java.util.HashMap[LabelNode, LabelNode]()
     rawInsns.foreach {
       case l: LabelNode => labelMap.put(l, new LabelNode())
-      case _ =>
+      case _            =>
     }
 
     // Second pass: clone instructions (skip FrameNodes which are recomputed by COMPUTE_FRAMES)
     rawInsns.flatMap {
       case _: FrameNode => None
-      case insn => Some(insn.clone(labelMap))
+      case insn         => Some(insn.clone(labelMap))
     }.toSeq
   }
 
@@ -689,8 +750,7 @@ object BytecodePatcher {
     // ALOAD 1
     insns.add(new VarInsnNode(ALOAD, 1))
     // GETSTATIC LazyVals$NullValue$.MODULE$
-    insns.add(new FieldInsnNode(GETSTATIC, NullValue, "MODULE$",
-      NullValueDesc))
+    insns.add(new FieldInsnNode(GETSTATIC, NullValue, "MODULE$", NullValueDesc))
     // IF_ACMPNE lInit
     insns.add(new JumpInsnNode(IF_ACMPNE, lInit))
 
@@ -710,8 +770,7 @@ object BytecodePatcher {
     // ALOAD 0
     insns.add(new VarInsnNode(ALOAD, 0))
     // INVOKESPECIAL lzyINIT
-    insns.add(new MethodInsnNode(INVOKESPECIAL, classInternalName, lzyInitName,
-      "()Ljava/lang/Object;", false))
+    insns.add(new MethodInsnNode(INVOKESPECIAL, classInternalName, lzyInitName, "()Ljava/lang/Object;", false))
     // unbox/checkcast + return
     typeInfo.addUnboxOrCast(insns)
     insns.add(new InsnNode(typeInfo.returnOpcode))
@@ -734,19 +793,19 @@ object BytecodePatcher {
     val insns = method.instructions
 
     // Labels
-    val lNonNull = new LabelNode()       // jump target when value is non-null
-    val lCasFailed = new LabelNode()      // CAS null→Evaluating failed, goto 0
-    val lNullMapping = new LabelNode()    // null→NullValue$ mapping
-    val lAfterCompute = new LabelNode()   // after computation block
-    val lExHandler = new LabelNode()      // exception handler
-    val lExCasOk = new LabelNode()        // in exception handler, CAS succeeded
-    val lSuccessCasOk = new LabelNode()   // in success path, CAS succeeded
-    val lReturnResult = new LabelNode()   // return aload_3
-    val lLoopBack = new LabelNode()       // goto 0 (loop back)
+    val lNonNull = new LabelNode() // jump target when value is non-null
+    val lCasFailed = new LabelNode() // CAS null→Evaluating failed, goto 0
+    val lNullMapping = new LabelNode() // null→NullValue$ mapping
+    val lAfterCompute = new LabelNode() // after computation block
+    val lExHandler = new LabelNode() // exception handler
+    val lExCasOk = new LabelNode() // in exception handler, CAS succeeded
+    val lSuccessCasOk = new LabelNode() // in success path, CAS succeeded
+    val lReturnResult = new LabelNode() // return aload_3
+    val lLoopBack = new LabelNode() // goto 0 (loop back)
     val lCheckEvaluating = new LabelNode() // check if Evaluating$
-    val lCheckWaiting = new LabelNode()   // check if Waiting
-    val lReturnNull = new LabelNode()     // return null (unknown LazyValControlState)
-    val lReturnVal = new LabelNode()      // return non-control-state value
+    val lCheckWaiting = new LabelNode() // check if Waiting
+    val lReturnNull = new LabelNode() // return null (unknown LazyValControlState)
+    val lReturnVal = new LabelNode() // return non-control-state value
 
     // Start of method (offset 0) — the loop target
     val lStart = new LabelNode()
@@ -765,10 +824,16 @@ object BytecodePatcher {
     insns.add(new FieldInsnNode(GETSTATIC, classInternalName, varHandleName, "Ljava/lang/invoke/VarHandle;"))
     insns.add(new VarInsnNode(ALOAD, 0))
     insns.add(new InsnNode(ACONST_NULL))
-    insns.add(new FieldInsnNode(GETSTATIC, Evaluating, "MODULE$",
-      EvaluatingDesc))
-    insns.add(new MethodInsnNode(INVOKEVIRTUAL, "java/lang/invoke/VarHandle", "compareAndSet",
-      "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z", false))
+    insns.add(new FieldInsnNode(GETSTATIC, Evaluating, "MODULE$", EvaluatingDesc))
+    insns.add(
+      new MethodInsnNode(
+        INVOKEVIRTUAL,
+        "java/lang/invoke/VarHandle",
+        "compareAndSet",
+        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z",
+        false
+      )
+    )
     insns.add(new JumpInsnNode(IFEQ, lCasFailed))
 
     // CAS succeeded: compute value
@@ -794,8 +859,7 @@ object BytecodePatcher {
     // null → NullValue$ mapping: ALOAD 3; IFNONNULL lNullMapping
     insns.add(new VarInsnNode(ALOAD, 3))
     insns.add(new JumpInsnNode(IFNONNULL, lNullMapping))
-    insns.add(new FieldInsnNode(GETSTATIC, NullValue, "MODULE$",
-      NullValueDesc))
+    insns.add(new FieldInsnNode(GETSTATIC, NullValue, "MODULE$", NullValueDesc))
     insns.add(new VarInsnNode(ASTORE, 2))
     insns.add(new JumpInsnNode(GOTO, lAfterCompute))
 
@@ -815,11 +879,17 @@ object BytecodePatcher {
     // CAS Evaluating$ → result (in exception handler, result is still in slot 2)
     insns.add(new FieldInsnNode(GETSTATIC, classInternalName, varHandleName, "Ljava/lang/invoke/VarHandle;"))
     insns.add(new VarInsnNode(ALOAD, 0))
-    insns.add(new FieldInsnNode(GETSTATIC, Evaluating, "MODULE$",
-      EvaluatingDesc))
+    insns.add(new FieldInsnNode(GETSTATIC, Evaluating, "MODULE$", EvaluatingDesc))
     insns.add(new VarInsnNode(ALOAD, 2))
-    insns.add(new MethodInsnNode(INVOKEVIRTUAL, "java/lang/invoke/VarHandle", "compareAndSet",
-      "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z", false))
+    insns.add(
+      new MethodInsnNode(
+        INVOKEVIRTUAL,
+        "java/lang/invoke/VarHandle",
+        "compareAndSet",
+        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z",
+        false
+      )
+    )
     insns.add(new JumpInsnNode(IFNE, lExCasOk))
 
     // Exception handler: CAS failed, need to countDown Waiting
@@ -831,8 +901,15 @@ object BytecodePatcher {
     insns.add(new VarInsnNode(ALOAD, 0))
     insns.add(new VarInsnNode(ALOAD, 5))
     insns.add(new VarInsnNode(ALOAD, 2))
-    insns.add(new MethodInsnNode(INVOKEVIRTUAL, "java/lang/invoke/VarHandle", "compareAndSet",
-      "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z", false))
+    insns.add(
+      new MethodInsnNode(
+        INVOKEVIRTUAL,
+        "java/lang/invoke/VarHandle",
+        "compareAndSet",
+        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z",
+        false
+      )
+    )
     insns.add(new InsnNode(POP))
     insns.add(new VarInsnNode(ALOAD, 5))
     insns.add(new MethodInsnNode(INVOKEVIRTUAL, Waiting, "countDown", "()V", false))
@@ -848,11 +925,17 @@ object BytecodePatcher {
     insns.add(lSuccessCasOk)
     insns.add(new FieldInsnNode(GETSTATIC, classInternalName, varHandleName, "Ljava/lang/invoke/VarHandle;"))
     insns.add(new VarInsnNode(ALOAD, 0))
-    insns.add(new FieldInsnNode(GETSTATIC, Evaluating, "MODULE$",
-      EvaluatingDesc))
+    insns.add(new FieldInsnNode(GETSTATIC, Evaluating, "MODULE$", EvaluatingDesc))
     insns.add(new VarInsnNode(ALOAD, 2))
-    insns.add(new MethodInsnNode(INVOKEVIRTUAL, "java/lang/invoke/VarHandle", "compareAndSet",
-      "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z", false))
+    insns.add(
+      new MethodInsnNode(
+        INVOKEVIRTUAL,
+        "java/lang/invoke/VarHandle",
+        "compareAndSet",
+        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z",
+        false
+      )
+    )
     insns.add(new JumpInsnNode(IFNE, lReturnResult))
 
     // Success CAS failed: countDown Waiting and return
@@ -864,8 +947,15 @@ object BytecodePatcher {
     insns.add(new VarInsnNode(ALOAD, 0))
     insns.add(new VarInsnNode(ALOAD, 5))
     insns.add(new VarInsnNode(ALOAD, 2))
-    insns.add(new MethodInsnNode(INVOKEVIRTUAL, "java/lang/invoke/VarHandle", "compareAndSet",
-      "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z", false))
+    insns.add(
+      new MethodInsnNode(
+        INVOKEVIRTUAL,
+        "java/lang/invoke/VarHandle",
+        "compareAndSet",
+        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z",
+        false
+      )
+    )
     insns.add(new InsnNode(POP))
     insns.add(new VarInsnNode(ALOAD, 5))
     insns.add(new MethodInsnNode(INVOKEVIRTUAL, Waiting, "countDown", "()V", false))
@@ -887,8 +977,7 @@ object BytecodePatcher {
 
     // Check Evaluating$
     insns.add(new VarInsnNode(ALOAD, 1))
-    insns.add(new FieldInsnNode(GETSTATIC, Evaluating, "MODULE$",
-      EvaluatingDesc))
+    insns.add(new FieldInsnNode(GETSTATIC, Evaluating, "MODULE$", EvaluatingDesc))
     insns.add(new JumpInsnNode(IF_ACMPNE, lCheckWaiting))
 
     // Is Evaluating$: CAS Evaluating$ → new Waiting, loop back
@@ -898,8 +987,15 @@ object BytecodePatcher {
     insns.add(new TypeInsnNode(NEW, Waiting))
     insns.add(new InsnNode(DUP))
     insns.add(new MethodInsnNode(INVOKESPECIAL, Waiting, "<init>", "()V", false))
-    insns.add(new MethodInsnNode(INVOKEVIRTUAL, "java/lang/invoke/VarHandle", "compareAndSet",
-      "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z", false))
+    insns.add(
+      new MethodInsnNode(
+        INVOKEVIRTUAL,
+        "java/lang/invoke/VarHandle",
+        "compareAndSet",
+        "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Z",
+        false
+      )
+    )
     insns.add(new InsnNode(POP))
     insns.add(new JumpInsnNode(GOTO, lStart))
 
@@ -934,8 +1030,8 @@ object BytecodePatcher {
     method
   }
 
-  /** Patches <clinit> for 3.0-3.1: removes OFFSET initialization, adds VarHandle initialization.
-    * Preserves MODULE$ initialization for objects.
+  /** Patches <clinit> for 3.0-3.1: removes OFFSET initialization, adds VarHandle initialization. Preserves MODULE$
+    * initialization for objects.
     */
   private def patchClinit30x_31x(
       clinit: MethodNode,
@@ -951,16 +1047,17 @@ object BytecodePatcher {
     while (current != null) {
       current match {
         case putStatic: FieldInsnNode
-          if putStatic.getOpcode == PUTSTATIC &&
-             putStatic.desc == "J" &&
-             (putStatic.name.matches("OFFSET\\$_m_\\d+") || putStatic.name.matches("OFFSET\\$\\d+")) =>
+            if putStatic.getOpcode == PUTSTATIC &&
+              putStatic.desc == "J" &&
+              (putStatic.name.matches("OFFSET\\$_m_\\d+") || putStatic.name.matches("OFFSET\\$\\d+")) =>
           // Walk backwards to find GETSTATIC LazyVals$.MODULE$
           var prev = current.getPrevious
           var count = 0
           while (prev != null && count < 10) {
             prev match {
-              case gs: FieldInsnNode if gs.getOpcode == GETSTATIC &&
-                  gs.owner == LazyValsObj && gs.name == "MODULE$" =>
+              case gs: FieldInsnNode
+                  if gs.getOpcode == GETSTATIC &&
+                    gs.owner == LazyValsObj && gs.name == "MODULE$" =>
                 // Found start, collect everything from here to putStatic
                 var temp = prev
                 while (temp != null && temp != current.getNext) {
@@ -1002,8 +1099,15 @@ object BytecodePatcher {
       val varHandleName = s"${storageFieldName}$$lzyHandle"
 
       // MethodHandles.lookup()
-      insns.add(new MethodInsnNode(INVOKESTATIC, "java/lang/invoke/MethodHandles", "lookup",
-        "()Ljava/lang/invoke/MethodHandles$Lookup;", false))
+      insns.add(
+        new MethodInsnNode(
+          INVOKESTATIC,
+          "java/lang/invoke/MethodHandles",
+          "lookup",
+          "()Ljava/lang/invoke/MethodHandles$Lookup;",
+          false
+        )
+      )
       // LDC <Class>
       insns.add(new LdcInsnNode(org.objectweb.asm.Type.getObjectType(classInternalName)))
       // LDC <FieldName>
@@ -1011,28 +1115,33 @@ object BytecodePatcher {
       // LDC Object.class
       insns.add(new LdcInsnNode(org.objectweb.asm.Type.getType("Ljava/lang/Object;")))
       // findVarHandle
-      insns.add(new MethodInsnNode(INVOKEVIRTUAL, "java/lang/invoke/MethodHandles$Lookup",
-        "findVarHandle",
-        "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/invoke/VarHandle;", false))
+      insns.add(
+        new MethodInsnNode(
+          INVOKEVIRTUAL,
+          "java/lang/invoke/MethodHandles$Lookup",
+          "findVarHandle",
+          "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/invoke/VarHandle;",
+          false
+        )
+      )
       // PUTSTATIC
-      insns.add(new FieldInsnNode(PUTSTATIC, classInternalName, varHandleName,
-        "Ljava/lang/invoke/VarHandle;"))
+      insns.add(new FieldInsnNode(PUTSTATIC, classInternalName, varHandleName, "Ljava/lang/invoke/VarHandle;"))
     }
   }
 
   /** Adds inner class references required for 3.8+ lazy val implementation. */
   private def addLazyValInnerClasses(classNode: ClassNode): Unit = {
     val innerClassesToAdd = Seq(
-      ("java/lang/invoke/MethodHandles$Lookup", "java/lang/invoke/MethodHandles", "Lookup",
-        ACC_PUBLIC | ACC_FINAL | ACC_STATIC),
-      (Evaluating, LazyVals, "Evaluating$",
-        ACC_PUBLIC | ACC_FINAL | ACC_STATIC),
-      (ControlState, LazyVals, "LazyValControlState",
-        ACC_PUBLIC | ACC_STATIC),
-      (NullValue, LazyVals, "NullValue$",
-        ACC_PUBLIC | ACC_FINAL | ACC_STATIC),
-      (Waiting, LazyVals, "Waiting",
-        ACC_PUBLIC | ACC_FINAL | ACC_STATIC)
+      (
+        "java/lang/invoke/MethodHandles$Lookup",
+        "java/lang/invoke/MethodHandles",
+        "Lookup",
+        ACC_PUBLIC | ACC_FINAL | ACC_STATIC
+      ),
+      (Evaluating, LazyVals, "Evaluating$", ACC_PUBLIC | ACC_FINAL | ACC_STATIC),
+      (ControlState, LazyVals, "LazyValControlState", ACC_PUBLIC | ACC_STATIC),
+      (NullValue, LazyVals, "NullValue$", ACC_PUBLIC | ACC_FINAL | ACC_STATIC),
+      (Waiting, LazyVals, "Waiting", ACC_PUBLIC | ACC_FINAL | ACC_STATIC)
     )
 
     innerClassesToAdd.foreach { case (name, outerName, innerName, access) =>
@@ -1054,41 +1163,136 @@ object BytecodePatcher {
 
   /** Gets type information for boxing/unboxing based on original field descriptor. */
   private def getTypeInfo(descriptor: String): TypeInfo = descriptor match {
-    case "I" => TypeInfo("java/lang/Integer", true, IRETURN,
-      insns => insns.add(new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime",
-        "unboxToInt", "(Ljava/lang/Object;)I", false)),
-      insns => insns.add(new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime",
-        "boxToInteger", "(I)Ljava/lang/Integer;", false)))
-    case "J" => TypeInfo("java/lang/Long", true, LRETURN,
-      insns => insns.add(new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime",
-        "unboxToLong", "(Ljava/lang/Object;)J", false)),
-      insns => insns.add(new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime",
-        "boxToLong", "(J)Ljava/lang/Long;", false)))
-    case "D" => TypeInfo("java/lang/Double", true, DRETURN,
-      insns => insns.add(new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime",
-        "unboxToDouble", "(Ljava/lang/Object;)D", false)),
-      insns => insns.add(new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime",
-        "boxToDouble", "(D)Ljava/lang/Double;", false)))
-    case "Z" => TypeInfo("java/lang/Boolean", true, IRETURN,
-      insns => insns.add(new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime",
-        "unboxToBoolean", "(Ljava/lang/Object;)Z", false)),
-      insns => insns.add(new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime",
-        "boxToBoolean", "(Z)Ljava/lang/Boolean;", false)))
-    case "F" => TypeInfo("java/lang/Float", true, FRETURN,
-      insns => insns.add(new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime",
-        "unboxToFloat", "(Ljava/lang/Object;)F", false)),
-      insns => insns.add(new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime",
-        "boxToFloat", "(F)Ljava/lang/Float;", false)))
+    case "I" =>
+      TypeInfo(
+        "java/lang/Integer",
+        true,
+        IRETURN,
+        insns =>
+          insns.add(
+            new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime", "unboxToInt", "(Ljava/lang/Object;)I", false)
+          ),
+        insns =>
+          insns.add(
+            new MethodInsnNode(
+              INVOKESTATIC,
+              "scala/runtime/BoxesRunTime",
+              "boxToInteger",
+              "(I)Ljava/lang/Integer;",
+              false
+            )
+          )
+      )
+    case "J" =>
+      TypeInfo(
+        "java/lang/Long",
+        true,
+        LRETURN,
+        insns =>
+          insns.add(
+            new MethodInsnNode(
+              INVOKESTATIC,
+              "scala/runtime/BoxesRunTime",
+              "unboxToLong",
+              "(Ljava/lang/Object;)J",
+              false
+            )
+          ),
+        insns =>
+          insns.add(
+            new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime", "boxToLong", "(J)Ljava/lang/Long;", false)
+          )
+      )
+    case "D" =>
+      TypeInfo(
+        "java/lang/Double",
+        true,
+        DRETURN,
+        insns =>
+          insns.add(
+            new MethodInsnNode(
+              INVOKESTATIC,
+              "scala/runtime/BoxesRunTime",
+              "unboxToDouble",
+              "(Ljava/lang/Object;)D",
+              false
+            )
+          ),
+        insns =>
+          insns.add(
+            new MethodInsnNode(
+              INVOKESTATIC,
+              "scala/runtime/BoxesRunTime",
+              "boxToDouble",
+              "(D)Ljava/lang/Double;",
+              false
+            )
+          )
+      )
+    case "Z" =>
+      TypeInfo(
+        "java/lang/Boolean",
+        true,
+        IRETURN,
+        insns =>
+          insns.add(
+            new MethodInsnNode(
+              INVOKESTATIC,
+              "scala/runtime/BoxesRunTime",
+              "unboxToBoolean",
+              "(Ljava/lang/Object;)Z",
+              false
+            )
+          ),
+        insns =>
+          insns.add(
+            new MethodInsnNode(
+              INVOKESTATIC,
+              "scala/runtime/BoxesRunTime",
+              "boxToBoolean",
+              "(Z)Ljava/lang/Boolean;",
+              false
+            )
+          )
+      )
+    case "F" =>
+      TypeInfo(
+        "java/lang/Float",
+        true,
+        FRETURN,
+        insns =>
+          insns.add(
+            new MethodInsnNode(
+              INVOKESTATIC,
+              "scala/runtime/BoxesRunTime",
+              "unboxToFloat",
+              "(Ljava/lang/Object;)F",
+              false
+            )
+          ),
+        insns =>
+          insns.add(
+            new MethodInsnNode(INVOKESTATIC, "scala/runtime/BoxesRunTime", "boxToFloat", "(F)Ljava/lang/Float;", false)
+          )
+      )
     case desc if desc.startsWith("L") && desc.endsWith(";") =>
       val internalName = desc.substring(1, desc.length - 1)
-      TypeInfo(internalName, false, ARETURN,
+      TypeInfo(
+        internalName,
+        false,
+        ARETURN,
         insns => insns.add(new TypeInsnNode(CHECKCAST, internalName)),
-        insns => () /* no boxing needed for reference types */)
+        insns => () /* no boxing needed for reference types */
+      )
     case desc =>
       // Fallback for Object or unknown — treat as reference type
-      TypeInfo("java/lang/Object", false, ARETURN,
+      TypeInfo(
+        "java/lang/Object",
+        false,
+        ARETURN,
         insns => (), /* no cast needed for Object */
-        insns => () /* no boxing needed */)
+        insns => () /* no boxing needed */
+      )
   }
 
   // ============================================================================
@@ -1098,8 +1302,8 @@ object BytecodePatcher {
   /** Patches Scala 3.2 lazy vals to 3.8+ format.
     *
     * Scala 3.2 bytecode is nearly identical to 3.0-3.1 — the only difference is in clinit
-    * (getDeclaredField+getOffsetStatic vs getOffset), which the backward-walking removal
-    * code handles transparently. Delegates to the 3.0-3.1 patching logic.
+    * (getDeclaredField+getOffsetStatic vs getOffset), which the backward-walking removal code handles transparently.
+    * Delegates to the 3.0-3.1 patching logic.
     */
   private def patchScala32x(
       bytes: Array[Byte],
@@ -1132,7 +1336,8 @@ object BytecodePatcher {
   ): PatchResult = {
     try {
       // Check if object lazy vals have OFFSET in companion class
-      val objectHasCompanionOffset = objectLazyVals.exists(_.offsetFieldLocation == OffsetFieldLocation.InCompanionClass)
+      val objectHasCompanionOffset =
+        objectLazyVals.exists(_.offsetFieldLocation == OffsetFieldLocation.InCompanionClass)
 
       if (objectHasCompanionOffset) {
         // Complex case: object has OFFSET in companion class, AND class has its own lazy vals
@@ -1181,7 +1386,8 @@ object BytecodePatcher {
           None,
           classLoader = classLoader
         )
-        val classPatchResult = patchScala33x_37x(classBytes, classInfo, classLazyVals, className, None, None, classLoader = classLoader)
+        val classPatchResult =
+          patchScala33x_37x(classBytes, classInfo, classLazyVals, className, None, None, classLoader = classLoader)
 
         (objectPatchResult, classPatchResult) match {
           case (PatchResult.PatchedSingle(_, objBytes), PatchResult.PatchedSingle(_, clsBytes)) =>
@@ -1315,9 +1521,9 @@ object BytecodePatcher {
 
   /** Patches companion class to remove OFFSET fields belonging to the companion object.
     *
-    * IMPORTANT: Only removes OFFSET$_m_N fields (companion object's lazy vals).
-    * Preserves OFFSET$N fields (class's own lazy vals) for subsequent patching.
-    * Does NOT remove <clinit> since it may contain initialization for the class's own OFFSET fields.
+    * IMPORTANT: Only removes OFFSET$_m_N fields (companion object's lazy vals). Preserves OFFSET$N fields (class's own
+    * lazy vals) for subsequent patching. Does NOT remove <clinit> since it may contain initialization for the class's
+    * own OFFSET fields.
     */
   private def patchCompanionClass33x_37x(classNode: ClassNode, lazyVals: Seq[LazyValInfo]): Unit = {
     // Only remove OFFSET$_m_N fields (companion object's lazy vals)
@@ -1340,9 +1546,9 @@ object BytecodePatcher {
       while (current != null) {
         current match {
           case fieldInsn: FieldInsnNode
-            if fieldInsn.getOpcode == PUTSTATIC &&
-               fieldInsn.desc == "J" &&
-               fieldInsn.name.matches("OFFSET\\$_m_\\d+") =>
+              if fieldInsn.getOpcode == PUTSTATIC &&
+                fieldInsn.desc == "J" &&
+                fieldInsn.name.matches("OFFSET\\$_m_\\d+") =>
             // Found PUTSTATIC for OFFSET$_m_N field
             // Remove the entire initialization sequence: ALOAD/LDC -> INVOKEVIRTUAL -> PUTSTATIC
             var prev = current.getPrevious
@@ -1517,7 +1723,7 @@ object BytecodePatcher {
         classNode.methods.add(clinit)
 
       case None =>
-        // No clinit and no VarHandles to initialize, do nothing
+      // No clinit and no VarHandles to initialize, do nothing
     }
 
     // Step 4: Patch lzyINIT methods

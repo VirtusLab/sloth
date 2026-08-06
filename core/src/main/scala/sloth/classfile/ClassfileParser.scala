@@ -9,8 +9,8 @@ import java.io.{StringWriter, PrintWriter}
 
 /** Parser for Java classfiles using ASM library.
   *
-  * Provides composable, testable parsing of classfiles into immutable domain
-  * models. All methods return Try or Either to avoid throwing exceptions.
+  * Provides composable, testable parsing of classfiles into immutable domain models. All methods return Try or Either
+  * to avoid throwing exceptions.
   */
 final class ClassfileParser:
   import scribe.{info, debug, warn, error}
@@ -22,10 +22,10 @@ final class ClassfileParser:
     * @return
     *   Right with ClassInfo on success, Left with error on failure
     */
-  def parseClassfile(bytes: Array[Byte]): Either[ClassfileError, ClassInfo] = 
+  def parseClassfile(bytes: Array[Byte]): Either[ClassfileError, ClassInfo] =
     info(s"Starting classfile parse (${bytes.length} bytes)")
 
-    for 
+    for
       classNode <- readClassNode(bytes)
       fullDump <- generateFullDump(bytes)
       classInfo <- buildClassInfo(classNode, fullDump)
@@ -66,8 +66,6 @@ final class ClassfileParser:
     .toEither.left.map: ex =>
       error(s"Failed to read classfile", ex)
       ClassfileError.ReadError(s"Failed to read classfile: ${ex.getMessage}", Some(ex))
-    
-  
 
   /** Generates a full textual dump of the classfile.
     *
@@ -132,14 +130,15 @@ final class ClassfileParser:
   private def parseFields(classNode: ClassNode): Seq[FieldInfo] =
     val fields = Option(classNode.fields)
       .map:
-        _.asScala.map: field =>
-          FieldInfo(
-            name = field.name,
-            descriptor = field.desc,
-            access = field.access,
-            signature = Option(field.signature)
-          )
-        .toSeq
+        _.asScala
+          .map: field =>
+            FieldInfo(
+              name = field.name,
+              descriptor = field.desc,
+              access = field.access,
+              signature = Option(field.signature)
+            )
+          .toSeq
       .getOrElse(Seq.empty)
 
     debug(s"Parsed ${fields.size} fields")
@@ -157,28 +156,28 @@ final class ClassfileParser:
   private def parseMethods(classNode: ClassNode, fullDump: String): Seq[MethodInfo] =
     val methods = Option(classNode.methods)
       .map:
-        _.asScala.map: method =>
-          val instructions = parseInstructions(method)
-          val localVars = parseLocalVariables(method)
-          val exceptions = parseExceptions(method)
-          val bytecodeText = extractMethodBytecode(fullDump, method.name, method.desc)
+        _.asScala
+          .map: method =>
+            val instructions = parseInstructions(method)
+            val localVars = parseLocalVariables(method)
+            val exceptions = parseExceptions(method)
+            val bytecodeText = extractMethodBytecode(fullDump, method.name, method.desc)
 
-          MethodInfo(
-            name = method.name,
-            descriptor = method.desc,
-            access = method.access,
-            signature = Option(method.signature),
-            instructions = instructions,
-            localVariables = localVars,
-            exceptions = exceptions,
-            bytecodeText = bytecodeText
-          )
-        .toSeq
+            MethodInfo(
+              name = method.name,
+              descriptor = method.desc,
+              access = method.access,
+              signature = Option(method.signature),
+              instructions = instructions,
+              localVariables = localVars,
+              exceptions = exceptions,
+              bytecodeText = bytecodeText
+            )
+          .toSeq
       .getOrElse(Seq.empty)
 
     debug(s"Parsed ${methods.size} methods")
     methods
-  
 
   /** Parses instruction information from a method.
     *
@@ -191,26 +190,28 @@ final class ClassfileParser:
     Option(method.instructions)
       .map: insnList =>
         val insns = insnList.iterator().asScala.toSeq
-        insns.map: insn =>
-          val opcodeStr = if insn.getOpcode >= 0 then
-            Try:
-              val printer = new Textifier()
-              val methodVisitor = new TraceMethodVisitor(printer)
-              insn.accept(methodVisitor)
-              printer.getText.asScala.headOption
-                .map(_.toString.trim)
+        insns
+          .map: insn =>
+            val opcodeStr =
+              if insn.getOpcode >= 0 then
+                Try:
+                  val printer = new Textifier()
+                  val methodVisitor = new TraceMethodVisitor(printer)
+                  insn.accept(methodVisitor)
+                  printer.getText.asScala.headOption
+                    .map(_.toString.trim)
+                    .getOrElse("???")
                 .getOrElse("???")
-            .getOrElse("???")
-          else "LABEL/FRAME/LINE"
+              else "LABEL/FRAME/LINE"
 
-          InstructionInfo(
-            opcode = insn.getOpcode,
-            opcodeString = if insn.getOpcode >= 0 then
-              OpcodeUtils.opcodeToString(insn.getOpcode)
-            else "META",
-            details = opcodeStr
-          )
-        .toSeq
+            InstructionInfo(
+              opcode = insn.getOpcode,
+              opcodeString =
+                if insn.getOpcode >= 0 then OpcodeUtils.opcodeToString(insn.getOpcode)
+                else "META",
+              details = opcodeStr
+            )
+          .toSeq
       .getOrElse(Seq.empty)
 
   /** Parses local variable information from a method.
@@ -223,9 +224,10 @@ final class ClassfileParser:
   private def parseLocalVariables(method: MethodNode): Seq[String] =
     Option(method.localVariables)
       .map: lvs =>
-        lvs.asScala.map: lv =>
-          s"${lv.name}: ${lv.desc}"
-        .toSeq
+        lvs.asScala
+          .map: lv =>
+            s"${lv.name}: ${lv.desc}"
+          .toSeq
       .getOrElse(Seq.empty)
 
   /** Parses exception information from a method.
@@ -271,14 +273,12 @@ final class ClassfileParser:
         },
         methodStart + 1
       )
-      
 
       val endIdx = if methodEnd > methodStart then methodEnd else lines.length
       lines.slice(methodStart, endIdx).mkString("\n")
     else
       warn(s"Method $methodName$methodDesc not found in dump")
       s"Method $methodName$methodDesc not found"
-  
 
 object ClassfileParser:
 
@@ -304,4 +304,3 @@ object ClassfileParser:
     */
   def parseTry(bytes: Array[Byte]): Try[ClassInfo] =
     ClassfileParser().parseClassfileTry(bytes)
-
