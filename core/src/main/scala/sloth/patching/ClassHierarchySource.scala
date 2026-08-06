@@ -67,35 +67,186 @@ object ClassHierarchySource:
 
   /** Synthesizes supertype-only stubs for JDK types.
     *
-    * From Java 9 on, platform types have no readable `.class` resource, and in a native image they have no classfile at
-    * all — but their `Class` objects are always available to Sloth's own loader. A stub carrying just the access flags,
-    * superclass and interfaces is everything frame computation needs, and producing bytes keeps the resolution path
-    * uniform.
+    * From Java 9 on, platform types have no readable `.class` resource, and in a GraalVM native image they frequently
+    * have no `Class` object either unless the type was registered for reflection — dynamic
+    * `Class.forName("java.util.jar.JarFile")` fails even though the class is part of the JDK. A stub carrying just the
+    * access flags, superclass and interfaces is everything frame computation needs. Resolution order:
+    *   1. class literals for types known to appear in scala3-compiler merges (embeds them in native images) 2.
+    *      `Class.forName` via the bootstrap / platform loader 3. hardcoded hierarchy for the JarFile / ZipFile /
+    *      JarOutputStream cluster
     */
   val jdkStubs: ClassHierarchySource =
     new ClassHierarchySource:
+      private val stubCache = new java.util.concurrent.ConcurrentHashMap[String, Array[Byte]]()
+
       def classBytes(internalName: String): Option[Array[Byte]] =
         if !jdkPrefixes.exists(internalName.startsWith) then None
         else
-          try
-            val cls = Class.forName(internalName.replace('/', '.'), false, getClass.getClassLoader)
-            val superClass = cls.getSuperclass
-            val superName =
-              if superClass != null then superClass.getName.replace('.', '/')
-              else if internalName == "java/lang/Object" then null
-              else "java/lang/Object"
-            val writer = new ClassWriter(0)
-            writer.visit(
-              Opcodes.V1_8,
-              cls.getModifiers & classAccessMask,
-              internalName,
-              null,
-              superName,
-              cls.getInterfaces.map(_.getName.replace('.', '/'))
+          Option(stubCache.get(internalName)).orElse {
+            val bytesOpt =
+              resolveJdkClass(internalName.replace('/', '.'))
+                .map(classStubBytes)
+                .orElse(hardcodedJdkStub(internalName))
+            bytesOpt.foreach(stubCache.put(internalName, _))
+            bytesOpt
+          }
+
+      private def resolveJdkClass(binaryName: String): Option[Class[?]] =
+        // Prefer class literals for types the native image must see; Class.forName of dynamic
+        // names needs reflection metadata under GraalVM and otherwise returns ClassNotFoundException.
+        binaryName match
+          case "java.util.jar.JarFile"              => Some(classOf[java.util.jar.JarFile])
+          case "java.util.jar.JarOutputStream"      => Some(classOf[java.util.jar.JarOutputStream])
+          case "java.util.zip.ZipFile"              => Some(classOf[java.util.zip.ZipFile])
+          case "java.util.zip.ZipOutputStream"      => Some(classOf[java.util.zip.ZipOutputStream])
+          case "java.util.zip.DeflaterOutputStream" => Some(classOf[java.util.zip.DeflaterOutputStream])
+          case "java.util.zip.ZipEntry"             => Some(classOf[java.util.zip.ZipEntry])
+          case "java.io.FilterOutputStream"         => Some(classOf[java.io.FilterOutputStream])
+          case "java.io.OutputStream"               => Some(classOf[java.io.OutputStream])
+          case "java.io.IOException"                => Some(classOf[java.io.IOException])
+          case "java.io.Closeable"                  => Some(classOf[java.io.Closeable])
+          case "java.lang.AutoCloseable"            => Some(classOf[java.lang.AutoCloseable])
+          case "java.lang.Exception"                => Some(classOf[java.lang.Exception])
+          case "java.lang.Throwable"                => Some(classOf[java.lang.Throwable])
+          case "java.lang.Object"                   => Some(classOf[java.lang.Object])
+          case "java.io.Serializable"               => Some(classOf[java.io.Serializable])
+          case "java.io.File"                       => Some(classOf[java.io.File])
+          case "java.lang.String"                   => Some(classOf[java.lang.String])
+          case "java.lang.Class"                    => Some(classOf[Class[?]])
+          case "java.lang.Error"                    => Some(classOf[java.lang.Error])
+          case "java.lang.RuntimeException"         => Some(classOf[java.lang.RuntimeException])
+          case "java.lang.ReflectiveOperationException" =>
+            Some(classOf[java.lang.ReflectiveOperationException])
+          case _ =>
+            try Some(Class.forName(binaryName, false, null))
+            catch
+              case _: Throwable =>
+                try Some(Class.forName(binaryName, false, ClassLoader.getPlatformClassLoader))
+                catch case _: Throwable => None
+
+      private def classStubBytes(cls: Class[?]): Array[Byte] =
+        val internalName = cls.getName.replace('.', '/')
+        val superClass = cls.getSuperclass
+        val superName =
+          if superClass != null then superClass.getName.replace('.', '/')
+          else if internalName == "java/lang/Object" then null
+          else "java/lang/Object"
+        val writer = new ClassWriter(0)
+        writer.visit(
+          Opcodes.V1_8,
+          cls.getModifiers & classAccessMask,
+          internalName,
+          null,
+          superName,
+          cls.getInterfaces.map(_.getName.replace('.', '/'))
+        )
+        writer.visitEnd()
+        writer.toByteArray
+
+      /** Last-resort stubs when neither class literals nor Class.forName work. Enough for the known
+        * `FileZipArchive.openZipFile` JarFile/ZipFile merge in scala3-compiler.
+        */
+      private def hardcodedJdkStub(internalName: String): Option[Array[Byte]] =
+        internalName match
+          case "java/util/jar/JarFile" =>
+            Some(manualStub("java/util/jar/JarFile", "java/util/zip/ZipFile", Array.empty, isInterface = false))
+          case "java/util/jar/JarOutputStream" =>
+            Some(
+              manualStub(
+                "java/util/jar/JarOutputStream",
+                "java/util/zip/ZipOutputStream",
+                Array.empty,
+                isInterface = false
+              )
             )
-            writer.visitEnd()
-            Some(writer.toByteArray)
-          catch case _: Throwable => None
+          case "java/util/zip/ZipOutputStream" =>
+            Some(
+              manualStub(
+                "java/util/zip/ZipOutputStream",
+                "java/util/zip/DeflaterOutputStream",
+                Array.empty,
+                isInterface = false
+              )
+            )
+          case "java/util/zip/DeflaterOutputStream" =>
+            Some(
+              manualStub(
+                "java/util/zip/DeflaterOutputStream",
+                "java/io/FilterOutputStream",
+                Array.empty,
+                isInterface = false
+              )
+            )
+          case "java/io/FilterOutputStream" =>
+            Some(
+              manualStub(
+                "java/io/FilterOutputStream",
+                "java/io/OutputStream",
+                Array.empty,
+                isInterface = false
+              )
+            )
+          case "java/io/OutputStream" =>
+            Some(
+              manualStub(
+                "java/io/OutputStream",
+                "java/lang/Object",
+                Array("java/io/Closeable", "java/lang/AutoCloseable"),
+                isInterface = false
+              )
+            )
+          case "java/util/zip/ZipFile" =>
+            Some(
+              manualStub(
+                "java/util/zip/ZipFile",
+                "java/lang/Object",
+                Array("java/io/Closeable", "java/lang/AutoCloseable"),
+                isInterface = false
+              )
+            )
+          case "java/io/Closeable" =>
+            Some(
+              manualStub(
+                "java/io/Closeable",
+                "java/lang/Object",
+                Array("java/lang/AutoCloseable"),
+                isInterface = true
+              )
+            )
+          case "java/lang/AutoCloseable" =>
+            Some(manualStub("java/lang/AutoCloseable", "java/lang/Object", Array.empty, isInterface = true))
+          case "java/io/IOException" =>
+            Some(manualStub("java/io/IOException", "java/lang/Exception", Array.empty, isInterface = false))
+          case "java/lang/Exception" =>
+            Some(manualStub("java/lang/Exception", "java/lang/Throwable", Array.empty, isInterface = false))
+          case "java/lang/Throwable" =>
+            Some(
+              manualStub(
+                "java/lang/Throwable",
+                "java/lang/Object",
+                Array("java/io/Serializable"),
+                isInterface = false
+              )
+            )
+          case "java/io/Serializable" =>
+            Some(manualStub("java/io/Serializable", "java/lang/Object", Array.empty, isInterface = true))
+          case "java/lang/Object" =>
+            Some(manualStub("java/lang/Object", null, Array.empty, isInterface = false))
+          case _ => None
+
+      private def manualStub(
+          internalName: String,
+          superName: String,
+          interfaces: Array[String],
+          isInterface: Boolean
+      ): Array[Byte] =
+        val access =
+          Opcodes.ACC_PUBLIC |
+            (if isInterface then Opcodes.ACC_INTERFACE | Opcodes.ACC_ABSTRACT else 0)
+        val writer = new ClassWriter(0)
+        writer.visit(Opcodes.V1_8, access, internalName, null, superName, interfaces)
+        writer.visitEnd()
+        writer.toByteArray
 
   /** Tries each source in order and returns the first hit. */
   def chain(sources: ClassHierarchySource*): ClassHierarchySource =

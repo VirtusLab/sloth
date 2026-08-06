@@ -203,6 +203,19 @@ class JarProcessorHierarchyTests extends FunSuite with ExampleLoader {
     assertEquals(writer.getCommonSuperClass("java/lang/Integer", "java/lang/Long"), "java/lang/Number")
   }
 
+  test("jdkStubs serves JarFile / JarOutputStream without Class.forName") {
+    // Class literals + hardcoded fallbacks must answer even when dynamic Class.forName would
+    // fail (as it does under GraalVM native image without reflection metadata).
+    assert(ClassHierarchySource.jdkStubs.classBytes("java/util/jar/JarFile").isDefined)
+    assert(ClassHierarchySource.jdkStubs.classBytes("java/util/jar/JarOutputStream").isDefined)
+    assert(ClassHierarchySource.jdkStubs.classBytes("java/util/zip/ZipFile").isDefined)
+    val writer = new ClassLoaderClassWriter(ClassHierarchySource.jdkStubs)
+    assertEquals(
+      writer.getCommonSuperClass("java/util/jar/JarFile", "java/util/zip/ZipFile"),
+      "java/util/zip/ZipFile"
+    )
+  }
+
   test("unresolvable types raise instead of degrading to Object in strict mode") {
     val strict = ClassHierarchySource.strict(ClassHierarchySource.chain())
     val writer = new ClassLoaderClassWriter(strict)
