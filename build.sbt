@@ -152,6 +152,9 @@ lazy val agent = project
       val depJars = deps.files.filter(_.getName.endsWith(".jar"))
       // Build full classpath: CLI jar + all dependency JARs so ASM can resolve class hierarchies
       val fullCp = (cliJar +: depJars).map(_.getAbsolutePath).mkString(java.io.File.pathSeparator)
+      // Passed explicitly too: relying on the CLI's own classloader to happen to see a dependency's
+      // types is exactly the silent-Object-merge trap this flag exists to avoid.
+      val hierarchyCp = depJars.map(_.getAbsolutePath).mkString(java.io.File.pathSeparator)
 
       val debugAssembly = sys.env.contains("DEBUG_AGENT_ASSEMBLY")
       val processLogger: scala.sys.process.ProcessLogger =
@@ -165,7 +168,7 @@ lazy val agent = project
         if (debugAssembly) log.info(s"Processing ${depJar.getName}...")
         val exitCode = scala.sys.process
           .Process(
-            Seq("java", "-cp", fullCp, "sloth.cli.Main", dest.getAbsolutePath)
+            Seq("java", "-cp", fullCp, "sloth.cli.Main", dest.getAbsolutePath, "--hierarchy-classpath", hierarchyCp)
           )
           .!(processLogger)
         if (exitCode != 0) {

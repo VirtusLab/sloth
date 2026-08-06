@@ -2,62 +2,48 @@ package sloth.patching
 
 import org.objectweb.asm.{ClassReader, ClassWriter, Opcodes}
 
+import scala.collection.mutable
+
 /** ClassWriter subclass that resolves class hierarchies WITHOUT triggering class loading.
   *
   * ASM's COMPUTE_FRAMES needs to find common superclasses. The default implementation uses Class.forName() which
   * triggers JVM class loading — problematic in agent mode because it can load classes with unpatched bytes before the
   * transformer has a chance to patch them.
   *
-  * This implementation reads class bytecode via getResourceAsStream and parses superclass names with ASM's ClassReader,
-  * walking the hierarchy without ever calling loadClass().
-  *
-  * On Java 9+, JDK classes in platform modules (java.base, etc.) may not be accessible via getResourceAsStream from
-  * arbitrary classloaders. For JDK types (java/, javax/, jdk/, sun/), we fall back to Class.forName() which is safe —
-  * these classes are already loaded or are guaranteed not to contain Scala lazy vals.
+  * Supertypes are instead read out of a [[ClassHierarchySource]] with ASM's ClassReader, walking the hierarchy without
+  * ever calling loadClass(). A type the source cannot serve is reported (logged, or raised in strict mode) rather than
+  * silently widening the merge to `java/lang/Object`, because such a merge yields frames the JVM rejects with a
+  * VerifyError.
   */
-class ClassLoaderClassWriter(classLoader: ClassLoader) extends ClassWriter(ClassWriter.COMPUTE_FRAMES):
+class ClassLoaderClassWriter(source: ClassHierarchySource) extends ClassWriter(ClassWriter.COMPUTE_FRAMES):
+
+  def this(classLoader: ClassLoader) = this(ClassHierarchySource.forRuntimeClassLoader(classLoader))
 
   private case class ClassInfo(superName: String, interfaces: Array[String], isInterface: Boolean)
 
-  /** JDK package prefixes where Class.forName fallback is safe (no lazy val patching risk). */
-  private val jdkPrefixes = Array("java/", "javax/", "jdk/", "sun/", "com/sun/")
+  private val reported = mutable.Set.empty[String]
 
   private def readClassInfo(internalName: String): Option[ClassInfo] =
     if internalName == "java/lang/Object" then Some(ClassInfo(null, Array.empty, isInterface = false))
     else
-      readClassInfoFromResource(classLoader, internalName)
-        .orElse {
-          // Try system classloader if different — covers cases where the provided
-          // classloader can't see platform/system classes
-          val sysCl = ClassLoader.getSystemClassLoader
-          if (sysCl ne classLoader) then readClassInfoFromResource(sysCl, internalName) else None
-        }
-        .orElse(readClassInfoViaReflection(internalName))
+      val info = source.classBytes(internalName).flatMap { bytes =>
+        try
+          val reader = new ClassReader(bytes)
+          val isInterface = (reader.getAccess & Opcodes.ACC_INTERFACE) != 0
+          Some(ClassInfo(reader.getSuperName, reader.getInterfaces, isInterface))
+        catch case _: Throwable => None
+      }
+      if info.isEmpty then reportUnresolvable(internalName)
+      info
 
-  private def readClassInfoFromResource(cl: ClassLoader, internalName: String): Option[ClassInfo] =
-    val resource = cl.getResourceAsStream(internalName + ".class")
-    if resource == null then None
-    else
-      try
-        val reader = new ClassReader(resource)
-        val isInterface = (reader.getAccess & Opcodes.ACC_INTERFACE) != 0
-        Some(ClassInfo(reader.getSuperName, reader.getInterfaces, isInterface))
-      catch case _: Throwable => None
-      finally resource.close()
-
-  /** Fallback: use Class.forName for JDK types that can't be found via getResourceAsStream on Java 9+ (module system).
-    * This is safe because JDK classes never contain Scala lazy vals, so loading them won't trigger unwanted patching.
-    */
-  private def readClassInfoViaReflection(internalName: String): Option[ClassInfo] =
-    if !jdkPrefixes.exists(internalName.startsWith) then None
-    else
-      try
-        val cls = Class.forName(internalName.replace('/', '.'), false, classLoader)
-        val isInterface = cls.isInterface
-        val superName = if cls.getSuperclass != null then cls.getSuperclass.getName.replace('.', '/') else null
-        val interfaces = cls.getInterfaces.map(_.getName.replace('.', '/'))
-        Some(ClassInfo(superName, interfaces, isInterface))
-      catch case _: Throwable => None
+  private def reportUnresolvable(internalName: String): Unit =
+    if source.failOnUnresolved then throw new ClassHierarchyException(internalName)
+    else if reported.add(internalName) then
+      scribe.warn(
+        s"Cannot resolve class '$internalName' while computing stack map frames; merges involving " +
+          "it degrade to java/lang/Object, which can make the patched class fail verification. " +
+          "Supply the jars or class directories that define it as hierarchy classpath."
+      )
 
   private def getSuperClasses(internalName: String): List[String] =
     var result = List(internalName)
@@ -71,11 +57,11 @@ class ClassLoaderClassWriter(classLoader: ClassLoader) extends ClassWriter(Class
           current = null
     result
 
-  private def isAssignableFrom(target: String, source: String): Boolean =
-    if target == source then return true
+  private def isAssignableFrom(target: String, subType: String): Boolean =
+    if target == subType then return true
     if target == "java/lang/Object" then return true
-    // Walk source's hierarchy checking superclasses and interfaces
-    var queue = List(source)
+    // Walk subType's hierarchy checking superclasses and interfaces
+    var queue = List(subType)
     var visited = Set.empty[String]
     while queue.nonEmpty do
       val current = queue.head
@@ -93,10 +79,13 @@ class ClassLoaderClassWriter(classLoader: ClassLoader) extends ClassWriter(Class
   override def getCommonSuperClass(type1: String, type2: String): String =
     if type1 == "java/lang/Object" || type2 == "java/lang/Object" then return "java/lang/Object"
 
+    // ASM also merges array types; their element hierarchy is irrelevant to the frames we emit.
+    if type1.startsWith("[") || type2.startsWith("[") then return "java/lang/Object"
+
     val info1 = readClassInfo(type1)
     val info2 = readClassInfo(type2)
 
-    // If we can't read either class, fall back to Object
+    // If we can't read either class, fall back to Object — readClassInfo has already reported it
     if info1.isEmpty || info2.isEmpty then return "java/lang/Object"
 
     if isAssignableFrom(type1, type2) then type1

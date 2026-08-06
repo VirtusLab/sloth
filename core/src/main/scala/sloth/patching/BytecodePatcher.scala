@@ -69,261 +69,270 @@ object BytecodePatcher {
   val EvaluatingDesc: String = "L" + Evaluating + ";"
   val LazyValsObjDesc: String = "L" + LazyValsObj + ";"
 
-  /** Creates a ClassWriter, using the provided ClassLoader for class hierarchy resolution if available. */
-  private def makeClassWriter(classLoader: Option[ClassLoader]): ClassWriter =
-    classLoader match
-      case Some(cl) => new ClassLoaderClassWriter(cl)
-      case None     => new ClassWriter(ClassWriter.COMPUTE_FRAMES)
+  /** Creates a ClassWriter, using the provided hierarchy source for frame computation if available. */
+  private def makeClassWriter(hierarchy: Option[ClassHierarchySource]): ClassWriter =
+    hierarchy match
+      case Some(source) => new ClassLoaderClassWriter(source)
+      case None         => new ClassWriter(ClassWriter.COMPUTE_FRAMES)
 
   /** Patches a classfile group to 3.8+ format, handling both single files and companion pairs.
     *
     * @param group
     *   The classfile group (single or companion pair)
     * @param classLoader
-    *   Optional ClassLoader for resolving class hierarchies during frame computation
+    *   Optional ClassLoader to resolve class hierarchies from; ignored when `hierarchySource` is given
+    * @param hierarchySource
+    *   Optional explicit class hierarchy context for frame computation
     * @return
     *   PatchResult indicating success, failure, or not applicable
     */
-  def patch(group: ClassfileGroup, classLoader: Option[ClassLoader] = None): PatchResult = group match {
-    case ClassfileGroup.Single(name, classInfo, bytes) =>
-      // Detect lazy vals in single class (no companion)
-      val detectionResult = LazyValDetector.detect(classInfo, None)
+  def patch(
+      group: ClassfileGroup,
+      classLoader: Option[ClassLoader] = None,
+      hierarchySource: Option[ClassHierarchySource] = None
+  ): PatchResult = {
+    val hierarchy = hierarchySource.orElse(classLoader.map(ClassHierarchySource.forRuntimeClassLoader))
+    group match {
+      case ClassfileGroup.Single(name, classInfo, bytes) =>
+        // Detect lazy vals in single class (no companion)
+        val detectionResult = LazyValDetector.detect(classInfo, None)
 
-      val (lazyVals, version) = detectionResult match {
-        case LazyValDetectionResult.NoLazyVals              => return PatchResult.NotApplicable
-        case LazyValDetectionResult.LazyValsFound(lvs, ver) => (lvs, ver)
-        case LazyValDetectionResult.MixedVersions(lvs) =>
-          return PatchResult.Failed(buildDiagnostic("Mixed Scala versions detected", name, classInfo, lvs))
-      }
+        val (lazyVals, version) = detectionResult match {
+          case LazyValDetectionResult.NoLazyVals              => return PatchResult.NotApplicable
+          case LazyValDetectionResult.LazyValsFound(lvs, ver) => (lvs, ver)
+          case LazyValDetectionResult.MixedVersions(lvs) =>
+            return PatchResult.Failed(buildDiagnostic("Mixed Scala versions detected", name, classInfo, lvs))
+        }
 
-      // Dispatch to version-specific patching
-      version match {
-        case ScalaVersion.Scala30x_31x => patchScala30x_31x(bytes, classInfo, lazyVals, name, classLoader = classLoader)
-        case ScalaVersion.Scala32x     => patchScala32x(bytes, classInfo, lazyVals, name, classLoader = classLoader)
-        case ScalaVersion.Scala33x_37x =>
-          patchScala33x_37x(bytes, classInfo, lazyVals, name, None, None, classLoader = classLoader)
-        case ScalaVersion.Scala38Plus => PatchResult.NotApplicable
-        case ScalaVersion.Unknown(reason) =>
-          PatchResult.Failed(buildDiagnostic(s"Unknown Scala version detected: $reason", name, classInfo, lazyVals))
-      }
+        // Dispatch to version-specific patching
+        version match {
+          case ScalaVersion.Scala30x_31x => patchScala30x_31x(bytes, classInfo, lazyVals, name, hierarchy = hierarchy)
+          case ScalaVersion.Scala32x     => patchScala32x(bytes, classInfo, lazyVals, name, hierarchy = hierarchy)
+          case ScalaVersion.Scala33x_37x =>
+            patchScala33x_37x(bytes, classInfo, lazyVals, name, None, None, hierarchy = hierarchy)
+          case ScalaVersion.Scala38Plus => PatchResult.NotApplicable
+          case ScalaVersion.Unknown(reason) =>
+            PatchResult.Failed(buildDiagnostic(s"Unknown Scala version detected: $reason", name, classInfo, lazyVals))
+        }
 
-    case ClassfileGroup.CompanionPair(
-          companionObjectName,
-          className,
-          companionObjectInfo,
-          classInfo,
-          companionObjectBytes,
-          classBytes
-        ) =>
-      // Detect lazy vals in companion object with companion class context
-      val objectDetectionResult = LazyValDetector.detect(companionObjectInfo, Some(classInfo))
+      case ClassfileGroup.CompanionPair(
+            companionObjectName,
+            className,
+            companionObjectInfo,
+            classInfo,
+            companionObjectBytes,
+            classBytes
+          ) =>
+        // Detect lazy vals in companion object with companion class context
+        val objectDetectionResult = LazyValDetector.detect(companionObjectInfo, Some(classInfo))
 
-      // Also detect lazy vals in companion class (standalone detection)
-      val classDetectionResult = LazyValDetector.detect(classInfo, None)
+        // Also detect lazy vals in companion class (standalone detection)
+        val classDetectionResult = LazyValDetector.detect(classInfo, None)
 
-      // Determine if we need to patch.
-      //
-      // A companion pair from a single Scala compiler can only have:
-      //   1. One side with no lazy vals, the other with some version
-      //   2. Both sides with the exact same version
-      // Anything else is a bug in detection. After validating this invariant,
-      // skip if the version is already Scala38Plus (genuine or already-patched bytes
-      // fed back by a chained ClassFileTransformer).
-      val (objectLazyVals, classLazyVals, version) = (objectDetectionResult, classDetectionResult) match {
-        case (LazyValDetectionResult.NoLazyVals, LazyValDetectionResult.NoLazyVals) =>
-          return PatchResult.NotApplicable
-        case (LazyValDetectionResult.LazyValsFound(objLvs, objVer), LazyValDetectionResult.NoLazyVals) =>
-          (objLvs, Seq.empty, objVer)
-        case (LazyValDetectionResult.NoLazyVals, LazyValDetectionResult.LazyValsFound(clsLvs, clsVer)) =>
-          (Seq.empty, clsLvs, clsVer)
-        case (
-              LazyValDetectionResult.LazyValsFound(objLvs, objVer),
-              LazyValDetectionResult.LazyValsFound(clsLvs, clsVer)
-            ) =>
-          // Both have lazy vals — versions MUST match. A mismatch is always a bug.
-          if (objVer != clsVer) {
-            val diag = new StringBuilder
-            diag.append(s"BUG: Companion class and object have different Scala versions: $clsVer vs $objVer\n")
-            diag.append(s"\n--- Companion object: $companionObjectName (detected as $objVer) ---\n")
-            diag.append(s"  Fields:\n")
-            companionObjectInfo.fields.foreach { f =>
-              diag.append(s"    ${f.name}:${f.descriptor} (access=0x${f.access.toHexString})\n")
+        // Determine if we need to patch.
+        //
+        // A companion pair from a single Scala compiler can only have:
+        //   1. One side with no lazy vals, the other with some version
+        //   2. Both sides with the exact same version
+        // Anything else is a bug in detection. After validating this invariant,
+        // skip if the version is already Scala38Plus (genuine or already-patched bytes
+        // fed back by a chained ClassFileTransformer).
+        val (objectLazyVals, classLazyVals, version) = (objectDetectionResult, classDetectionResult) match {
+          case (LazyValDetectionResult.NoLazyVals, LazyValDetectionResult.NoLazyVals) =>
+            return PatchResult.NotApplicable
+          case (LazyValDetectionResult.LazyValsFound(objLvs, objVer), LazyValDetectionResult.NoLazyVals) =>
+            (objLvs, Seq.empty, objVer)
+          case (LazyValDetectionResult.NoLazyVals, LazyValDetectionResult.LazyValsFound(clsLvs, clsVer)) =>
+            (Seq.empty, clsLvs, clsVer)
+          case (
+                LazyValDetectionResult.LazyValsFound(objLvs, objVer),
+                LazyValDetectionResult.LazyValsFound(clsLvs, clsVer)
+              ) =>
+            // Both have lazy vals — versions MUST match. A mismatch is always a bug.
+            if (objVer != clsVer) {
+              val diag = new StringBuilder
+              diag.append(s"BUG: Companion class and object have different Scala versions: $clsVer vs $objVer\n")
+              diag.append(s"\n--- Companion object: $companionObjectName (detected as $objVer) ---\n")
+              diag.append(s"  Fields:\n")
+              companionObjectInfo.fields.foreach { f =>
+                diag.append(s"    ${f.name}:${f.descriptor} (access=0x${f.access.toHexString})\n")
+              }
+              diag.append(s"  Lazy vals (${objLvs.size}):\n")
+              objLvs.foreach { lv =>
+                diag.append(
+                  s"    ${lv.name} (index=${lv.index}, version=${lv.version}, offset=${lv.offsetField.map(_.name)}, varHandle=${lv.varHandleField
+                      .map(_.name)}, bitmap=${lv.bitmapField.map(_.name)}, init=${lv.initMethod.map(_.name)})\n"
+                )
+              }
+              diag.append(s"\n--- Companion class: $className (detected as $clsVer) ---\n")
+              diag.append(s"  Fields:\n")
+              classInfo.fields.foreach { f =>
+                diag.append(s"    ${f.name}:${f.descriptor} (access=0x${f.access.toHexString})\n")
+              }
+              diag.append(s"  Lazy vals (${clsLvs.size}):\n")
+              clsLvs.foreach { lv =>
+                diag.append(
+                  s"    ${lv.name} (index=${lv.index}, version=${lv.version}, offset=${lv.offsetField.map(_.name)}, varHandle=${lv.varHandleField
+                      .map(_.name)}, bitmap=${lv.bitmapField.map(_.name)}, init=${lv.initMethod.map(_.name)})\n"
+                )
+              }
+              return PatchResult.Failed(diag.toString())
             }
-            diag.append(s"  Lazy vals (${objLvs.size}):\n")
-            objLvs.foreach { lv =>
-              diag.append(
-                s"    ${lv.name} (index=${lv.index}, version=${lv.version}, offset=${lv.offsetField.map(_.name)}, varHandle=${lv.varHandleField
-                    .map(_.name)}, bitmap=${lv.bitmapField.map(_.name)}, init=${lv.initMethod.map(_.name)})\n"
+            (objLvs, clsLvs, objVer)
+          case (LazyValDetectionResult.MixedVersions(lvs), _) =>
+            val allLvs = lvs ++ (classDetectionResult match {
+              case LazyValDetectionResult.LazyValsFound(l, _) => l; case _ => Seq.empty
+            })
+            return PatchResult.Failed(
+              buildDiagnostic(
+                "Mixed Scala versions detected in companion object",
+                companionObjectName,
+                companionObjectInfo,
+                allLvs
               )
-            }
-            diag.append(s"\n--- Companion class: $className (detected as $clsVer) ---\n")
-            diag.append(s"  Fields:\n")
-            classInfo.fields.foreach { f =>
-              diag.append(s"    ${f.name}:${f.descriptor} (access=0x${f.access.toHexString})\n")
-            }
-            diag.append(s"  Lazy vals (${clsLvs.size}):\n")
-            clsLvs.foreach { lv =>
-              diag.append(
-                s"    ${lv.name} (index=${lv.index}, version=${lv.version}, offset=${lv.offsetField.map(_.name)}, varHandle=${lv.varHandleField
-                    .map(_.name)}, bitmap=${lv.bitmapField.map(_.name)}, init=${lv.initMethod.map(_.name)})\n"
-              )
-            }
-            return PatchResult.Failed(diag.toString())
-          }
-          (objLvs, clsLvs, objVer)
-        case (LazyValDetectionResult.MixedVersions(lvs), _) =>
-          val allLvs = lvs ++ (classDetectionResult match {
-            case LazyValDetectionResult.LazyValsFound(l, _) => l; case _ => Seq.empty
-          })
-          return PatchResult.Failed(
-            buildDiagnostic(
-              "Mixed Scala versions detected in companion object",
-              companionObjectName,
-              companionObjectInfo,
-              allLvs
             )
-          )
-        case (_, LazyValDetectionResult.MixedVersions(lvs)) =>
-          val allLvs = (objectDetectionResult match {
-            case LazyValDetectionResult.LazyValsFound(l, _) => l; case _ => Seq.empty
-          }) ++ lvs
-          return PatchResult.Failed(
-            buildDiagnostic("Mixed Scala versions detected in companion class", className, classInfo, allLvs)
-          )
-      }
+          case (_, LazyValDetectionResult.MixedVersions(lvs)) =>
+            val allLvs = (objectDetectionResult match {
+              case LazyValDetectionResult.LazyValsFound(l, _) => l; case _ => Seq.empty
+            }) ++ lvs
+            return PatchResult.Failed(
+              buildDiagnostic("Mixed Scala versions detected in companion class", className, classInfo, allLvs)
+            )
+        }
 
-      // Already in target format — nothing to patch
-      if (version == ScalaVersion.Scala38Plus) {
-        return PatchResult.NotApplicable
-      }
+        // Already in target format — nothing to patch
+        if (version == ScalaVersion.Scala38Plus) {
+          return PatchResult.NotApplicable
+        }
 
-      // Dispatch to version-specific patching based on what we found
-      version match {
-        case ScalaVersion.Scala30x_31x =>
-          // Handle different companion pair scenarios for 3.0-3.1
-          (objectLazyVals.nonEmpty, classLazyVals.nonEmpty) match {
-            case (true, false) =>
-              // Only object has lazy vals - companion class has OFFSET field
-              patchScala30x_31x(
-                companionObjectBytes,
-                companionObjectInfo,
-                objectLazyVals,
-                companionObjectName,
-                Some((className, classInfo, classBytes)),
-                classLoader = classLoader
-              )
-            case (false, true) =>
-              // Only class has lazy vals - patch as standalone
-              patchScala30x_31x(classBytes, classInfo, classLazyVals, className, classLoader = classLoader)
-            case (true, true) =>
-              // BOTH have lazy vals - need to patch both independently
-              patchCompanionPairBothHaveLazyVals30x_31x(
-                companionObjectName,
-                className,
-                companionObjectInfo,
-                classInfo,
-                companionObjectBytes,
-                classBytes,
-                objectLazyVals,
-                classLazyVals,
-                classLoader = classLoader
-              )
-            case (false, false) =>
-              PatchResult.NotApplicable
-          }
-
-        case ScalaVersion.Scala32x =>
-          // Handle different companion pair scenarios for 3.2 (same logic as 3.0-3.1)
-          (objectLazyVals.nonEmpty, classLazyVals.nonEmpty) match {
-            case (true, false) =>
-              // Only object has lazy vals - companion class has OFFSET field
-              patchScala30x_31x(
-                companionObjectBytes,
-                companionObjectInfo,
-                objectLazyVals,
-                companionObjectName,
-                Some((className, classInfo, classBytes)),
-                classLoader = classLoader
-              )
-            case (false, true) =>
-              // Only class has lazy vals - patch as standalone
-              patchScala30x_31x(classBytes, classInfo, classLazyVals, className, classLoader = classLoader)
-            case (true, true) =>
-              // BOTH have lazy vals - need to patch both independently
-              patchCompanionPairBothHaveLazyVals30x_31x(
-                companionObjectName,
-                className,
-                companionObjectInfo,
-                classInfo,
-                companionObjectBytes,
-                classBytes,
-                objectLazyVals,
-                classLazyVals,
-                classLoader = classLoader
-              )
-            case (false, false) =>
-              PatchResult.NotApplicable
-          }
-
-        case ScalaVersion.Scala33x_37x =>
-          // Handle different companion pair scenarios
-          (objectLazyVals.nonEmpty, classLazyVals.nonEmpty) match {
-            case (true, false) =>
-              // Only object has lazy vals
-              val hasCompanionOffset =
-                objectLazyVals.exists(_.offsetFieldLocation == OffsetFieldLocation.InCompanionClass)
-              if (hasCompanionOffset) {
-                patchScala33x_37x(
+        // Dispatch to version-specific patching based on what we found
+        version match {
+          case ScalaVersion.Scala30x_31x =>
+            // Handle different companion pair scenarios for 3.0-3.1
+            (objectLazyVals.nonEmpty, classLazyVals.nonEmpty) match {
+              case (true, false) =>
+                // Only object has lazy vals - companion class has OFFSET field
+                patchScala30x_31x(
                   companionObjectBytes,
                   companionObjectInfo,
                   objectLazyVals,
                   companionObjectName,
                   Some((className, classInfo, classBytes)),
-                  classLoader = classLoader
+                  hierarchy = hierarchy
                 )
-              } else {
-                patchScala33x_37x(
+              case (false, true) =>
+                // Only class has lazy vals - patch as standalone
+                patchScala30x_31x(classBytes, classInfo, classLazyVals, className, hierarchy = hierarchy)
+              case (true, true) =>
+                // BOTH have lazy vals - need to patch both independently
+                patchCompanionPairBothHaveLazyVals30x_31x(
+                  companionObjectName,
+                  className,
+                  companionObjectInfo,
+                  classInfo,
+                  companionObjectBytes,
+                  classBytes,
+                  objectLazyVals,
+                  classLazyVals,
+                  hierarchy = hierarchy
+                )
+              case (false, false) =>
+                PatchResult.NotApplicable
+            }
+
+          case ScalaVersion.Scala32x =>
+            // Handle different companion pair scenarios for 3.2 (same logic as 3.0-3.1)
+            (objectLazyVals.nonEmpty, classLazyVals.nonEmpty) match {
+              case (true, false) =>
+                // Only object has lazy vals - companion class has OFFSET field
+                patchScala30x_31x(
                   companionObjectBytes,
                   companionObjectInfo,
                   objectLazyVals,
                   companionObjectName,
-                  None,
-                  None,
-                  classLoader = classLoader
+                  Some((className, classInfo, classBytes)),
+                  hierarchy = hierarchy
                 )
-              }
-            case (false, true) =>
-              // Only class has lazy vals - patch as standalone
-              patchScala33x_37x(classBytes, classInfo, classLazyVals, className, None, None, classLoader = classLoader)
-            case (true, true) =>
-              // BOTH have lazy vals - need to patch both independently
-              patchCompanionPairBothHaveLazyVals33x_37x(
-                companionObjectName,
-                className,
-                companionObjectInfo,
-                classInfo,
-                companionObjectBytes,
-                classBytes,
-                objectLazyVals,
-                classLazyVals,
-                classLoader = classLoader
-              )
-            case (false, false) =>
-              PatchResult.NotApplicable
-          }
+              case (false, true) =>
+                // Only class has lazy vals - patch as standalone
+                patchScala30x_31x(classBytes, classInfo, classLazyVals, className, hierarchy = hierarchy)
+              case (true, true) =>
+                // BOTH have lazy vals - need to patch both independently
+                patchCompanionPairBothHaveLazyVals30x_31x(
+                  companionObjectName,
+                  className,
+                  companionObjectInfo,
+                  classInfo,
+                  companionObjectBytes,
+                  classBytes,
+                  objectLazyVals,
+                  classLazyVals,
+                  hierarchy = hierarchy
+                )
+              case (false, false) =>
+                PatchResult.NotApplicable
+            }
 
-        case ScalaVersion.Scala38Plus => PatchResult.NotApplicable
-        case ScalaVersion.Unknown(reason) =>
-          val allLvs = objectLazyVals ++ classLazyVals
-          PatchResult.Failed(
-            buildDiagnostic(
-              s"Unknown Scala version detected: $reason",
-              companionObjectName,
-              companionObjectInfo,
-              allLvs
+          case ScalaVersion.Scala33x_37x =>
+            // Handle different companion pair scenarios
+            (objectLazyVals.nonEmpty, classLazyVals.nonEmpty) match {
+              case (true, false) =>
+                // Only object has lazy vals
+                val hasCompanionOffset =
+                  objectLazyVals.exists(_.offsetFieldLocation == OffsetFieldLocation.InCompanionClass)
+                if (hasCompanionOffset) {
+                  patchScala33x_37x(
+                    companionObjectBytes,
+                    companionObjectInfo,
+                    objectLazyVals,
+                    companionObjectName,
+                    Some((className, classInfo, classBytes)),
+                    hierarchy = hierarchy
+                  )
+                } else {
+                  patchScala33x_37x(
+                    companionObjectBytes,
+                    companionObjectInfo,
+                    objectLazyVals,
+                    companionObjectName,
+                    None,
+                    None,
+                    hierarchy = hierarchy
+                  )
+                }
+              case (false, true) =>
+                // Only class has lazy vals - patch as standalone
+                patchScala33x_37x(classBytes, classInfo, classLazyVals, className, None, None, hierarchy = hierarchy)
+              case (true, true) =>
+                // BOTH have lazy vals - need to patch both independently
+                patchCompanionPairBothHaveLazyVals33x_37x(
+                  companionObjectName,
+                  className,
+                  companionObjectInfo,
+                  classInfo,
+                  companionObjectBytes,
+                  classBytes,
+                  objectLazyVals,
+                  classLazyVals,
+                  hierarchy = hierarchy
+                )
+              case (false, false) =>
+                PatchResult.NotApplicable
+            }
+
+          case ScalaVersion.Scala38Plus => PatchResult.NotApplicable
+          case ScalaVersion.Unknown(reason) =>
+            val allLvs = objectLazyVals ++ classLazyVals
+            PatchResult.Failed(
+              buildDiagnostic(
+                s"Unknown Scala version detected: $reason",
+                companionObjectName,
+                companionObjectInfo,
+                allLvs
+              )
             )
-          )
-      }
+        }
+    }
   }
 
   /** Builds a multi-line diagnostic message for Failed results. */
@@ -373,7 +382,7 @@ object BytecodePatcher {
       lazyVals: Seq[LazyValInfo],
       name: String,
       companionInfo: Option[(String, sloth.classfile.ClassInfo, Array[Byte])] = None,
-      classLoader: Option[ClassLoader] = None
+      hierarchy: Option[ClassHierarchySource] = None
   ): PatchResult = {
     try {
       companionInfo match {
@@ -386,7 +395,7 @@ object BytecodePatcher {
 
           patchCompanionClass30x_31x(companionClassNode)
 
-          val companionWriter = makeClassWriter(classLoader)
+          val companionWriter = makeClassWriter(hierarchy)
           companionClassNode.accept(companionWriter)
           val patchedClassBytes = companionWriter.toByteArray
 
@@ -397,7 +406,7 @@ object BytecodePatcher {
 
           patchClassNode30x_31x(objectNode, classInfo.name, lazyVals)
 
-          val objectWriter = makeClassWriter(classLoader)
+          val objectWriter = makeClassWriter(hierarchy)
           objectNode.accept(objectWriter)
           val patchedObjectBytes = objectWriter.toByteArray
 
@@ -411,7 +420,7 @@ object BytecodePatcher {
 
           patchClassNode30x_31x(classNode, classInfo.name, lazyVals)
 
-          val writer = makeClassWriter(classLoader)
+          val writer = makeClassWriter(hierarchy)
           classNode.accept(writer)
           val patchedBytes = writer.toByteArray
 
@@ -434,7 +443,7 @@ object BytecodePatcher {
       classBytes: Array[Byte],
       objectLazyVals: Seq[LazyValInfo],
       classLazyVals: Seq[LazyValInfo],
-      classLoader: Option[ClassLoader] = None
+      hierarchy: Option[ClassHierarchySource] = None
   ): PatchResult = {
     try {
       // Step 1: Patch object (which also patches class to remove OFFSET fields)
@@ -444,7 +453,7 @@ object BytecodePatcher {
         objectLazyVals,
         companionObjectName,
         Some((className, classInfo, classBytes)),
-        classLoader = classLoader
+        hierarchy = hierarchy
       )
 
       objectPatchResult match {
@@ -457,7 +466,7 @@ object BytecodePatcher {
 
           patchClassNode30x_31x(classNode, className, classLazyVals)
 
-          val writer = makeClassWriter(classLoader)
+          val writer = makeClassWriter(hierarchy)
           classNode.accept(writer)
           val finalPatchedClassBytes = writer.toByteArray
 
@@ -1310,9 +1319,9 @@ object BytecodePatcher {
       classInfo: sloth.classfile.ClassInfo,
       lazyVals: Seq[LazyValInfo],
       name: String,
-      classLoader: Option[ClassLoader] = None
+      hierarchy: Option[ClassHierarchySource] = None
   ): PatchResult = {
-    patchScala30x_31x(bytes, classInfo, lazyVals, name, classLoader = classLoader)
+    patchScala30x_31x(bytes, classInfo, lazyVals, name, hierarchy = hierarchy)
   }
 
   // ============================================================================
@@ -1332,7 +1341,7 @@ object BytecodePatcher {
       classBytes: Array[Byte],
       objectLazyVals: Seq[LazyValInfo],
       classLazyVals: Seq[LazyValInfo],
-      classLoader: Option[ClassLoader] = None
+      hierarchy: Option[ClassHierarchySource] = None
   ): PatchResult = {
     try {
       // Check if object lazy vals have OFFSET in companion class
@@ -1348,7 +1357,7 @@ object BytecodePatcher {
           objectLazyVals,
           companionObjectName,
           Some((className, classInfo, classBytes)),
-          classLoader = classLoader
+          hierarchy = hierarchy
         )
 
         objectPatchResult match {
@@ -1363,7 +1372,7 @@ object BytecodePatcher {
             patchClassNode33x_37x(classNode, className, classLazyVals)
 
             // Write back to bytes
-            val writer = makeClassWriter(classLoader)
+            val writer = makeClassWriter(hierarchy)
             classNode.accept(writer)
             val finalPatchedClassBytes = writer.toByteArray
 
@@ -1384,10 +1393,10 @@ object BytecodePatcher {
           companionObjectName,
           None,
           None,
-          classLoader = classLoader
+          hierarchy = hierarchy
         )
         val classPatchResult =
-          patchScala33x_37x(classBytes, classInfo, classLazyVals, className, None, None, classLoader = classLoader)
+          patchScala33x_37x(classBytes, classInfo, classLazyVals, className, None, None, hierarchy = hierarchy)
 
         (objectPatchResult, classPatchResult) match {
           case (PatchResult.PatchedSingle(_, objBytes), PatchResult.PatchedSingle(_, clsBytes)) =>
@@ -1422,7 +1431,7 @@ object BytecodePatcher {
       name: String,
       companionInfo: Option[(String, sloth.classfile.ClassInfo, Array[Byte])],
       unused: Option[Any] = None, // For compatibility with old signature
-      classLoader: Option[ClassLoader] = None
+      hierarchy: Option[ClassHierarchySource] = None
   ): PatchResult = {
     try {
       companionInfo match {
@@ -1443,7 +1452,7 @@ object BytecodePatcher {
           // Patch companion class: just remove OFFSET fields and <clinit>
           patchCompanionClass33x_37x(companionClassNode, lazyVals)
 
-          val companionWriter = makeClassWriter(classLoader)
+          val companionWriter = makeClassWriter(hierarchy)
           companionClassNode.accept(companionWriter)
           val patchedClassBytes = companionWriter.toByteArray
 
@@ -1490,7 +1499,7 @@ object BytecodePatcher {
             )
           }
 
-          val objectWriter = makeClassWriter(classLoader)
+          val objectWriter = makeClassWriter(hierarchy)
           objectNode.accept(objectWriter)
           val patchedObjectBytes = objectWriter.toByteArray
 
@@ -1506,7 +1515,7 @@ object BytecodePatcher {
           patchClassNode33x_37x(classNode, classInfo.name, lazyVals)
 
           // Write back to bytes
-          val writer = makeClassWriter(classLoader)
+          val writer = makeClassWriter(hierarchy)
           classNode.accept(writer)
           val patchedBytes = writer.toByteArray
 

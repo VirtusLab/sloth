@@ -1,7 +1,7 @@
 package sloth.cli
 
 import sloth.analysis.{LazyValAnalyzer, ClassfileGroup}
-import sloth.patching.BytecodePatcher
+import sloth.patching.{BytecodePatcher, ClassHierarchySource}
 import sloth.jar.JarProcessor
 import scala.util.{Try, Success, Failure}
 
@@ -33,14 +33,23 @@ object Main {
     def successful: Boolean = failed == 0
   }
 
+  private val usage = "Usage: sloth <directory|file.jar> [--hierarchy-classpath <cp>]"
+
+  /** Splits a platform-separated classpath string into paths. */
+  private def parseClasspath(cp: String): Seq[java.nio.file.Path] =
+    cp.split(java.io.File.pathSeparatorChar).filter(_.nonEmpty).map(os.Path(_, os.pwd).toNIO).toSeq
+
   def main(args: Array[String]): Unit = {
-    if (args.length != 1) {
-      Console.err.println(fansi.Color.Red("Error: Expected exactly one argument (directory or JAR path)"))
-      Console.err.println("Usage: sloth <directory|file.jar>")
-      sys.exit(1)
+    val (target, hierarchyClasspath) = args.toSeq match {
+      case Seq(t)                              => (t, Seq.empty[java.nio.file.Path])
+      case Seq(t, "--hierarchy-classpath", cp) => (t, parseClasspath(cp))
+      case _ =>
+        Console.err.println(fansi.Color.Red("Error: Expected a directory or JAR path"))
+        Console.err.println(usage)
+        sys.exit(1)
     }
 
-    val targetPath = os.Path(args(0), os.pwd)
+    val targetPath = os.Path(target, os.pwd)
 
     if (!os.exists(targetPath)) {
       Console.err.println(fansi.Color.Red(s"Error: Path does not exist: $targetPath"))
@@ -49,7 +58,7 @@ object Main {
 
     // Dispatch to JAR mode or directory mode
     if (targetPath.ext == "jar") {
-      processJar(targetPath)
+      processJar(targetPath, hierarchyClasspath)
       return
     }
 
@@ -92,14 +101,17 @@ object Main {
     println(fansi.Color.Cyan(s"Grouped into ${groups.size} classfile group(s)"))
     println()
 
-    // Build a classloader that can resolve classes from the target directory
-    val classLoader = new java.net.URLClassLoader(
-      Array(targetDir.toNIO.toUri.toURL),
-      getClass.getClassLoader
+    // Class hierarchy context for frame computation: the directory being patched wins, then any
+    // caller-supplied classpath, then this process's own classpath and synthesized JDK stubs.
+    val hierarchy = ClassHierarchySource.chain(
+      ClassHierarchySource.forClasspath(targetDir.toNIO +: hierarchyClasspath),
+      ClassHierarchySource.forRuntimeClassLoader(getClass.getClassLoader)
     )
 
     // Process each group
-    val results = groups.map(processGroup(_, targetDir, classLoader))
+    val results =
+      try groups.map(processGroup(_, targetDir, hierarchy))
+      finally hierarchy.close()
 
     // Print summary
     println()
@@ -114,7 +126,7 @@ object Main {
   }
 
   /** Processes a JAR file in-place: reads, patches, writes back */
-  private def processJar(jarPath: os.Path): Unit = {
+  private def processJar(jarPath: os.Path, hierarchyClasspath: Seq[java.nio.file.Path]): Unit = {
     println(fansi.Bold.On("Sloth - Scala 3.x Lazy Val Bytecode Patcher"))
     println(fansi.Color.Cyan(s"Processing JAR: $jarPath"))
     println()
@@ -122,7 +134,7 @@ object Main {
     val input = jarPath.toNIO
     val tempOutput = os.temp(suffix = ".jar", deleteOnExit = true)
 
-    val result = JarProcessor.process(input, tempOutput.toNIO)
+    val result = JarProcessor.process(input, tempOutput.toNIO, hierarchyClasspath)
 
     println(fansi.Bold.On("=" * 80))
     println(fansi.Bold.On("Summary:"))
@@ -163,13 +175,13 @@ object Main {
   private def processGroup(
       group: ClassfileGroup,
       targetDir: os.Path,
-      classLoader: ClassLoader
+      hierarchy: ClassHierarchySource
   ): (String, PatchGroupResult) = {
     val groupName = group.primaryName
     print(fansi.Color.Cyan(s"Processing: $groupName ... "))
 
     Try {
-      BytecodePatcher.patch(group, classLoader = Some(classLoader)) match {
+      BytecodePatcher.patch(group, hierarchySource = Some(hierarchy)) match {
         case BytecodePatcher.PatchResult.PatchedSingle(name, bytes) =>
           // Write back single file
           val filePath = targetDir / s"${name.replace('.', '/')}.class"
