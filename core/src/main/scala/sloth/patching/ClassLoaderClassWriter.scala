@@ -4,17 +4,16 @@ import org.objectweb.asm.{ClassReader, ClassWriter, Opcodes}
 
 /** ClassWriter subclass that resolves class hierarchies WITHOUT triggering class loading.
   *
-  * ASM's COMPUTE_FRAMES needs to find common superclasses. The default implementation uses
-  * Class.forName() which triggers JVM class loading — problematic in agent mode because it
-  * can load classes with unpatched bytes before the transformer has a chance to patch them.
+  * ASM's COMPUTE_FRAMES needs to find common superclasses. The default implementation uses Class.forName() which
+  * triggers JVM class loading — problematic in agent mode because it can load classes with unpatched bytes before the
+  * transformer has a chance to patch them.
   *
-  * This implementation reads class bytecode via getResourceAsStream and parses superclass
-  * names with ASM's ClassReader, walking the hierarchy without ever calling loadClass().
+  * This implementation reads class bytecode via getResourceAsStream and parses superclass names with ASM's ClassReader,
+  * walking the hierarchy without ever calling loadClass().
   *
-  * On Java 9+, JDK classes in platform modules (java.base, etc.) may not be accessible via
-  * getResourceAsStream from arbitrary classloaders. For JDK types (java/, javax/, jdk/, sun/),
-  * we fall back to Class.forName() which is safe — these classes are already loaded or are
-  * guaranteed not to contain Scala lazy vals.
+  * On Java 9+, JDK classes in platform modules (java.base, etc.) may not be accessible via getResourceAsStream from
+  * arbitrary classloaders. For JDK types (java/, javax/, jdk/, sun/), we fall back to Class.forName() which is safe —
+  * these classes are already loaded or are guaranteed not to contain Scala lazy vals.
   */
 class ClassLoaderClassWriter(classLoader: ClassLoader) extends ClassWriter(ClassWriter.COMPUTE_FRAMES):
 
@@ -24,8 +23,7 @@ class ClassLoaderClassWriter(classLoader: ClassLoader) extends ClassWriter(Class
   private val jdkPrefixes = Array("java/", "javax/", "jdk/", "sun/", "com/sun/")
 
   private def readClassInfo(internalName: String): Option[ClassInfo] =
-    if internalName == "java/lang/Object" then
-      Some(ClassInfo(null, Array.empty, isInterface = false))
+    if internalName == "java/lang/Object" then Some(ClassInfo(null, Array.empty, isInterface = false))
     else
       readClassInfoFromResource(classLoader, internalName)
         .orElse {
@@ -47,9 +45,8 @@ class ClassLoaderClassWriter(classLoader: ClassLoader) extends ClassWriter(Class
       catch case _: Throwable => None
       finally resource.close()
 
-  /** Fallback: use Class.forName for JDK types that can't be found via getResourceAsStream
-    * on Java 9+ (module system). This is safe because JDK classes never contain Scala lazy vals,
-    * so loading them won't trigger unwanted patching.
+  /** Fallback: use Class.forName for JDK types that can't be found via getResourceAsStream on Java 9+ (module system).
+    * This is safe because JDK classes never contain Scala lazy vals, so loading them won't trigger unwanted patching.
     */
   private def readClassInfoViaReflection(internalName: String): Option[ClassInfo] =
     if !jdkPrefixes.exists(internalName.startsWith) then None
@@ -94,8 +91,7 @@ class ClassLoaderClassWriter(classLoader: ClassLoader) extends ClassWriter(Class
     false
 
   override def getCommonSuperClass(type1: String, type2: String): String =
-    if type1 == "java/lang/Object" || type2 == "java/lang/Object" then
-      return "java/lang/Object"
+    if type1 == "java/lang/Object" || type2 == "java/lang/Object" then return "java/lang/Object"
 
     val info1 = readClassInfo(type1)
     val info2 = readClassInfo(type2)

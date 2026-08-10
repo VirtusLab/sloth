@@ -9,27 +9,29 @@ import sloth.patching.BytecodePatcher
 
 /** ClassFileTransformer that patches Scala 3.0-3.7 lazy val bytecode at load time.
   *
-  * Uses the group-based patching API to correctly handle companion pairs where
-  * lazy val implementation is split across object and class files. When one side
-  * of a companion pair is loaded, the other side is read via getResourceAsStream
-  * (pure I/O, no class loading) and both are patched together. The companion's
-  * patched bytes are buffered for when it actually loads.
+  * Uses the group-based patching API to correctly handle companion pairs where lazy val implementation is split across
+  * object and class files. When one side of a companion pair is loaded, the other side is read via getResourceAsStream
+  * (pure I/O, no class loading) and both are patched together. The companion's patched bytes are buffered for when it
+  * actually loads.
   */
 class SlothTransformer(config: AgentConfig) extends ClassFileTransformer {
 
-  /** Packages to always skip (JDK internals, our own code, Scala runtime).
-    * NOTE: String literals for our own package and scala/runtime/ are constructed
-    * via StringBuilder/Array to prevent sbt-assembly shade rules from rewriting them.
-    * The agent receives UNSHADED class names from the JVM.
+  /** Packages to always skip (JDK internals, our own code, Scala runtime). NOTE: String literals for our own package
+    * and scala/runtime/ are constructed via StringBuilder/Array to prevent sbt-assembly shade rules from rewriting
+    * them. The agent receives UNSHADED class names from the JVM.
     */
   private val skipPrefixes = Array(
-    "java/", "javax/", "jdk/", "sun/", "com/sun/",
+    "java/",
+    "javax/",
+    "jdk/",
+    "sun/",
+    "com/sun/",
     new StringBuilder("sl").append("oth/").toString,
     new StringBuilder("sca").append("la/runtime/").toString
   )
 
-  /** Buffer for patched companion bytes. When one side of a companion pair is patched,
-    * the other side's bytes are stored here and consumed (via remove) when that class loads.
+  /** Buffer for patched companion bytes. When one side of a companion pair is patched, the other side's bytes are
+    * stored here and consumed (via remove) when that class loads.
     */
   private val patchedCompanionBuffer = new ConcurrentHashMap[String, Array[Byte]]()
 
@@ -115,7 +117,9 @@ class SlothTransformer(config: AgentConfig) extends ClassFileTransformer {
           null
 
         case Right(groups) =>
-          scribe.debug(s"  group() returned ${groups.size} group(s): ${groups.map(g => s"${g.getClass.getSimpleName}(${g.primaryName})").mkString(", ")}")
+          scribe.debug(
+            s"  group() returned ${groups.size} group(s): ${groups.map(g => s"${g.getClass.getSimpleName}(${g.primaryName})").mkString(", ")}"
+          )
 
           // There should be exactly one group (single or companion pair)
           groups.headOption.map(BytecodePatcher.patch(_, classLoader = Some(loader))) match {

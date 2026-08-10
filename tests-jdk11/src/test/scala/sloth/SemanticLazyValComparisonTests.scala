@@ -144,12 +144,11 @@ class SemanticLazyValComparisonTests extends FunSuite with ExampleLoader {
                 inspectOnFailure(example, version1, s"Semantic comparison failure: Expected IDENTICAL but got $result")
                 inspectOnFailure(example, version2, s"Semantic comparison failure: Expected IDENTICAL but got $result")
                 fail(s"Expected IDENTICAL but got: $result")
-            else
-              if result.areIdentical then
-                // Inspect bytecode on failure
-                inspectOnFailure(example, version1, s"Semantic comparison failure: Expected DIFFERENT but got IDENTICAL")
-                inspectOnFailure(example, version2, s"Semantic comparison failure: Expected DIFFERENT but got IDENTICAL")
-                fail(s"Expected DIFFERENT but got IDENTICAL")
+            else if result.areIdentical then
+              // Inspect bytecode on failure
+              inspectOnFailure(example, version1, s"Semantic comparison failure: Expected DIFFERENT but got IDENTICAL")
+              inspectOnFailure(example, version2, s"Semantic comparison failure: Expected DIFFERENT but got IDENTICAL")
+              fail(s"Expected DIFFERENT but got IDENTICAL")
 
             // Print detailed results for debugging
             result match {

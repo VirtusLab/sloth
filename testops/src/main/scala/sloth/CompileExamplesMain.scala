@@ -5,9 +5,9 @@ import scala.collection.immutable.TreeSet
 /** Compiles experimental examples across multiple Scala versions for debugging purposes.
   *
   * This tool:
-  * - Takes examples from experimental/examples/
-  * - Compiles them with all interesting Scala versions (from LazyValDetectionTests)
-  * - Outputs compiled classfiles to .out/ directory for inspection
+  *   - Takes examples from experimental/examples/
+  *   - Compiles them with all interesting Scala versions (from LazyValDetectionTests)
+  *   - Outputs compiled classfiles to .out/ directory for inspection
   */
 object CompileExamplesMain {
   import scribe._
@@ -147,7 +147,8 @@ object CompileExamplesMain {
               // Generate javap output for each classfile
               classFiles.foreach { classFile =>
                 val className = classFile.last.stripSuffix(".class")
-                val javapOutput = os.proc("javap", "-v", "-p", classFile.toString)
+                val javapOutput = os
+                  .proc("javap", "-v", "-p", classFile.toString)
                   .call(cwd = versionDir, check = false, stderr = os.Pipe, stdout = os.Pipe)
 
                 if (javapOutput.exitCode == 0) {
@@ -189,7 +190,8 @@ object CompileExamplesMain {
 
                   classFiles.foreach { classFile =>
                     val className = classFile.last.stripSuffix(".class")
-                    val javapOutput = os.proc("javap", "-v", "-p", classFile.toString)
+                    val javapOutput = os
+                      .proc("javap", "-v", "-p", classFile.toString)
                       .call(cwd = patchedDir, check = false, stderr = os.Pipe, stdout = os.Pipe)
 
                     if (javapOutput.exitCode == 0) {
@@ -239,7 +241,8 @@ object CompileExamplesMain {
                       .filter(p => !p.toString.contains(".bloop"))
                       .filter(p => !p.last.contains("$package"))
                       .size
-                    val javapFiles = os.list(versionDir)
+                    val javapFiles = os
+                      .list(versionDir)
                       .filter(p => os.isFile(p) && p.last.endsWith(".javap.txt"))
                       .size
                     info(s"  ${versionDir.last}/ ($classFiles .class files, $javapFiles .javap.txt files)")

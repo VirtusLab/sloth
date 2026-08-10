@@ -5,14 +5,14 @@ import scala.compiletime.uninitialized
 
 /** Java-9 runtime proof for the published artifacts.
   *
-  * The agent rewrites Unsafe-based lazy vals into the VarHandle-based scheme, and VarHandle is a
-  * Java 9 API. This suite runs the agent (built at `-release:9`) against Scala 3.0-3.7 bytecode on
-  * whatever JVM is hosting the tests and asserts the application still produces correct output. When
-  * this suite runs on a Java 11 JVM (the `tests-jdk11` CI job), a green run proves the patched
-  * VarHandle bytecode verifies and executes on Java 9 — i.e. the published artifacts work there.
+  * The agent rewrites Unsafe-based lazy vals into the VarHandle-based scheme, and VarHandle is a Java 9 API. This suite
+  * runs the agent (built at `-release:9`) against Scala 3.0-3.7 bytecode on whatever JVM is hosting the tests and
+  * asserts the application still produces correct output. When this suite runs on a Java 11 JVM (the `tests-jdk11` CI
+  * job), a green run proves the patched VarHandle bytecode verifies and executes on Java 9 — i.e. the published
+  * artifacts work there.
   *
-  * Unlike the JDK-24+ suites, this one makes NO assertions about `sun.misc.Unsafe` warnings (Java 9
-  * does not emit them); it only checks correctness, so it is valid on any JDK >= 9.
+  * Unlike the JDK-24+ suites, this one makes NO assertions about `sun.misc.Unsafe` warnings (Java 9 does not emit
+  * them); it only checks correctness, so it is valid on any JDK >= 9.
   */
 class Jdk9RuntimeTests extends FunSuite with ExampleLoader {
 
@@ -24,11 +24,11 @@ class Jdk9RuntimeTests extends FunSuite with ExampleLoader {
   override val quietTests: Boolean = true
 
   /** Only the versions we actually run on Java 9. We exclude:
-    *   - 3.0-3.2: the agent rewrites their bitmap lazy vals to the full 3.8 scheme, which needs the
-    *     3.8 scala-library runtime helpers — and that library is v61 (Java 17), unloadable on Java 9.
+    *   - 3.0-3.2: the agent rewrites their bitmap lazy vals to the full 3.8 scheme, which needs the 3.8 scala-library
+    *     runtime helpers — and that library is v61 (Java 17), unloadable on Java 9.
     *   - 3.8.1: its compiler can't emit < v61, so the fixture itself can't run on Java 9.
-    * That leaves the 3.3-3.7 Unsafe->VarHandle path, whose own scala-library is v53 and ships the
-    * runtime control-state classes the patched bytecode needs.
+    * That leaves the 3.3-3.7 Unsafe->VarHandle path, whose own scala-library is v53 and ships the runtime control-state
+    * classes the patched bytecode needs.
     */
   val runtimeVersions: Seq[String] = Seq("3.3.0", "3.3.6", "3.4.3", "3.5.2", "3.6.4", "3.7.3")
 
@@ -57,9 +57,23 @@ class Jdk9RuntimeTests extends FunSuite with ExampleLoader {
 
   /** Full classpath (scala-library + deps) for a compiled example, via scala-cli. */
   def getScalaCliClasspath(targetDir: os.Path, scalaVersion: String): String =
-    os.proc("scala-cli", "compile", "--print-classpath", "--jvm", "17", "--release", "9", "--bloop-startup-timeout", "180s", "-S", scalaVersion, targetDir.toString)
-      .call(cwd = targetDir, stderr = os.Pipe, stdout = os.Pipe)
-      .out.text().trim
+    os.proc(
+      "scala-cli",
+      "compile",
+      "--print-classpath",
+      "--jvm",
+      "17",
+      "--release",
+      "9",
+      "--bloop-startup-timeout",
+      "180s",
+      "-S",
+      scalaVersion,
+      targetDir.toString
+    ).call(cwd = targetDir, stderr = os.Pipe, stdout = os.Pipe)
+      .out
+      .text()
+      .trim
 
   /** Run a main class with the agent attached on the host JVM. */
   def runWithAgent(outputDir: os.Path, scalaLibClasspath: String, mainClass: String): (Int, String, String) = {

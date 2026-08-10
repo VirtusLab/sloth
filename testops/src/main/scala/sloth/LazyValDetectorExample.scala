@@ -73,7 +73,8 @@ import scala.util.{Try, Success, Failure}
 
   import scala.jdk.StreamConverters._
 
-  val classfiles = Files.walk(dir)
+  val classfiles = Files
+    .walk(dir)
     .toScala(LazyList)
     .filter(p => Files.isRegularFile(p) && p.toString.endsWith(".class"))
     .toSeq
@@ -96,11 +97,10 @@ import scala.util.{Try, Success, Failure}
   val withLazyVals = results.filter { case (_, _, result) =>
     result match
       case sloth.lazyval.LazyValDetectionResult.NoLazyVals => false
-      case _ => true
+      case _                                               => true
   }
 
-  if withLazyVals.isEmpty then
-    println("No lazy vals found in any classfile")
+  if withLazyVals.isEmpty then println("No lazy vals found in any classfile")
   else
     println(s"\nFound lazy vals in ${withLazyVals.size} classes:\n")
     withLazyVals.foreach { case (filename, className, result) =>

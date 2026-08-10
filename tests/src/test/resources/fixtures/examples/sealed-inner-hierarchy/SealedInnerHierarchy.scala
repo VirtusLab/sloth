@@ -12,9 +12,9 @@ abstract class Container:
     case class Third(value: String) extends Step(2)
 
   def process(step: Step): String = step match
-    case Step.First(v) => s"first: $v"
+    case Step.First(v)  => s"first: $v"
     case Step.Second(v) => s"second: $v"
-    case Step.Third(v) => s"third: $v"
+    case Step.Third(v)  => s"third: $v"
 
 class MyContainer extends Container
 

@@ -140,7 +140,9 @@ class BytecodePatchingTests extends FunSuite with ExampleLoader {
   /** Finds a compiled classfile for a specific example, Scala version, and class name. */
   def findClassFile(example: LoadedExample, scalaVersion: String, className: String): Option[Path] = {
     example.compilationResult.results.get(scalaVersion).flatMap { versionResult =>
-      versionResult.classFiles.find(cf => cf.relativePath == s"$className.class" || cf.relativePath.endsWith(s"/$className.class")).map(_.absolutePath.toNIO)
+      versionResult.classFiles
+        .find(cf => cf.relativePath == s"$className.class" || cf.relativePath.endsWith(s"/$className.class"))
+        .map(_.absolutePath.toNIO)
     }
   }
 
@@ -189,11 +191,24 @@ class BytecodePatchingTests extends FunSuite with ExampleLoader {
             detectionResult match {
               case LazyValDetectionResult.NoLazyVals => // OK
               case LazyValDetectionResult.LazyValsFound(lazyVals, ScalaVersion.Unknown(reason)) =>
-                break(Left(s"Detected Unknown version for ${group.primaryName} compiled with Scala $version: $reason. LazyVals: ${lazyVals.map(lv => s"${lv.name} (version=${lv.version})").mkString(", ")}"))
+                break(
+                  Left(
+                    s"Detected Unknown version for ${group.primaryName} compiled with Scala $version: $reason. LazyVals: ${lazyVals
+                        .map(lv => s"${lv.name} (version=${lv.version})")
+                        .mkString(", ")}"
+                  )
+                )
               case LazyValDetectionResult.LazyValsFound(_, _) => // OK
               case LazyValDetectionResult.MixedVersions(lazyVals) =>
-                val versionBreakdown = lazyVals.groupBy(_.version).map { case (v, lvs) => s"$v: ${lvs.map(_.name).mkString(", ")}" }.mkString("; ")
-                break(Left(s"Detected mixed versions for ${group.primaryName} compiled with Scala $version. Breakdown: $versionBreakdown"))
+                val versionBreakdown = lazyVals
+                  .groupBy(_.version)
+                  .map { case (v, lvs) => s"$v: ${lvs.map(_.name).mkString(", ")}" }
+                  .mkString("; ")
+                break(
+                  Left(
+                    s"Detected mixed versions for ${group.primaryName} compiled with Scala $version. Breakdown: $versionBreakdown"
+                  )
+                )
             }
           }
 
@@ -258,7 +273,18 @@ class BytecodePatchingTests extends FunSuite with ExampleLoader {
     */
   def getScalaCliClasspath(targetDir: os.Path, scalaVersion: String): String = {
     val result = os
-      .proc("scala-cli", "compile", "--print-classpath", "--jvm", "17", "--bloop-startup-timeout", "180s", "-S", scalaVersion, targetDir.toString)
+      .proc(
+        "scala-cli",
+        "compile",
+        "--print-classpath",
+        "--jvm",
+        "17",
+        "--bloop-startup-timeout",
+        "180s",
+        "-S",
+        scalaVersion,
+        targetDir.toString
+      )
       .call(cwd = targetDir, stderr = os.Pipe, stdout = os.Pipe)
 
     result.out.text().trim
@@ -286,10 +312,9 @@ class BytecodePatchingTests extends FunSuite with ExampleLoader {
     (result.exitCode, result.out.text().trim, result.err.text().trim)
   }
 
-  /** Check that stderr has no Unsafe warnings from the application's own scala runtime.
-    * The agent's shaded internal runtime (sloth.shaded.scala.runtime.LazyVals$) may
-    * still trigger Unsafe warnings since the agent itself is compiled with Scala 3.7.x,
-    * but those don't affect the user's application.
+  /** Check that stderr has no Unsafe warnings from the application's own scala runtime. The agent's shaded internal
+    * runtime (sloth.shaded.scala.runtime.LazyVals$) may still trigger Unsafe warnings since the agent itself is
+    * compiled with Scala 3.7.x, but those don't affect the user's application.
     */
   private def hasAppUnsafeWarning(stderr: String): Boolean =
     stderr.linesIterator.exists { line =>
@@ -315,8 +340,8 @@ class BytecodePatchingTests extends FunSuite with ExampleLoader {
         log(s"\n[${example.name}] Testing bytecode patching")
 
         // Only test patchable versions that were actually compiled
-        val compiledPatchableVersions = patchableVersions.filter(v =>
-          example.compilationResult.results.get(v).exists(_.success))
+        val compiledPatchableVersions =
+          patchableVersions.filter(v => example.compilationResult.results.get(v).exists(_.success))
 
         example.metadata.expectedClasses.filter(_.lazyVals.nonEmpty).foreach { expectedClass =>
           val className = expectedClass.className
@@ -347,9 +372,19 @@ class BytecodePatchingTests extends FunSuite with ExampleLoader {
 
                     if !comparison.areIdentical then
                       // Inspect bytecode on failure - show both the patched version and the 3.8 reference
-                      inspectOnFailure(example, version, s"Patching semantic comparison failure: Expected patched $version to be identical to 3.8 for $className, but got: $comparison")
-                      inspectOnFailure(example, targetVersion, s"Patching semantic comparison failure: 3.8 reference for $className")
-                      fail(s"Patched $version bytecode should be semantically identical to 3.8 for $className, but got: $comparison")
+                      inspectOnFailure(
+                        example,
+                        version,
+                        s"Patching semantic comparison failure: Expected patched $version to be identical to 3.8 for $className, but got: $comparison"
+                      )
+                      inspectOnFailure(
+                        example,
+                        targetVersion,
+                        s"Patching semantic comparison failure: 3.8 reference for $className"
+                      )
+                      fail(
+                        s"Patched $version bytecode should be semantically identical to 3.8 for $className, but got: $comparison"
+                      )
 
                     log(s"    ✓ Semantically identical to 3.8")
 
@@ -377,8 +412,8 @@ class BytecodePatchingTests extends FunSuite with ExampleLoader {
         val mainClassName = example.metadata.mainClassName
 
         // Only test patchable versions that were actually compiled
-        val compiledPatchableVersions = patchableVersions.filter(v =>
-          example.compilationResult.results.get(v).exists(_.success))
+        val compiledPatchableVersions =
+          patchableVersions.filter(v => example.compilationResult.results.get(v).exists(_.success))
 
         // Test pre-patched versions - should have Unsafe warning
         compiledPatchableVersions.foreach { version =>
@@ -487,8 +522,8 @@ class BytecodePatchingTests extends FunSuite with ExampleLoader {
       if (example.metadata.expectedClasses.exists(_.lazyVals.nonEmpty)) {
         log(s"\n[${example.name}] Testing idempotency")
 
-        val compiledPatchableVersions = patchableVersions.filter(v =>
-          example.compilationResult.results.get(v).exists(_.success))
+        val compiledPatchableVersions =
+          patchableVersions.filter(v => example.compilationResult.results.get(v).exists(_.success))
         compiledPatchableVersions.headOption.foreach { version =>
           patchAllClassFilesForVersion(example, version) match {
             case Right(patchedFilesMap) if patchedFilesMap.nonEmpty =>

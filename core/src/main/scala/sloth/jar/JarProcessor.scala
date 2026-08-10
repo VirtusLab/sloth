@@ -75,7 +75,6 @@ object JarProcessor:
                 nameToEntryPath.get(clsName).foreach(ep => patchedBytes(ep) = clsBytes)
 
               case BytecodePatcher.PatchResult.NotApplicable => // nothing to do
-
               case BytecodePatcher.PatchResult.Failed(error) =>
                 errors += s"Failed to patch group ${group.primaryName}: $error"
           catch

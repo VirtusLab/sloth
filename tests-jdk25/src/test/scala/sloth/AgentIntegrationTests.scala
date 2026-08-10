@@ -5,8 +5,8 @@ import scala.compiletime.uninitialized
 
 /** End-to-end integration tests for the sloth java agent.
   *
-  * Verifies that attaching `-javaagent:sloth-agent.jar` to a JVM running
-  * Scala 3.3.6 code eliminates sun.misc.Unsafe warnings and produces correct output.
+  * Verifies that attaching `-javaagent:sloth-agent.jar` to a JVM running Scala 3.3.6 code eliminates sun.misc.Unsafe
+  * warnings and produces correct output.
   *
   * Requires Java 24+ (when Unsafe warnings appear).
   */
@@ -39,7 +39,9 @@ class AgentIntegrationTests extends FunSuite {
       case versionPattern(major) =>
         val majorVersion = major.toInt
         if (majorVersion < 24) {
-          throw new RuntimeException(s"Java 24+ required for agent integration tests (Unsafe warnings), found Java $majorVersion")
+          throw new RuntimeException(
+            s"Java 24+ required for agent integration tests (Unsafe warnings), found Java $majorVersion"
+          )
         }
       case _ =>
         throw new RuntimeException(s"Could not parse Java version from: $javaVersionLine")
@@ -55,11 +57,32 @@ class AgentIntegrationTests extends FunSuite {
     os.write(tempDir / "AgentTestApp.scala", testSource)
 
     println(s"Compiling test source with Scala $scalaVersion...")
-    os.proc("scala-cli", "compile", "--jvm", "17", "--bloop-startup-timeout", "180s", "-S", scalaVersion, tempDir.toString)
-      .call(cwd = tempDir, stdout = os.Inherit, stderr = os.Inherit)
+    os.proc(
+      "scala-cli",
+      "compile",
+      "--jvm",
+      "17",
+      "--bloop-startup-timeout",
+      "180s",
+      "-S",
+      scalaVersion,
+      tempDir.toString
+    ).call(cwd = tempDir, stdout = os.Inherit, stderr = os.Inherit)
 
     // Get classpath
-    val cpResult = os.proc("scala-cli", "compile", "--print-classpath", "--jvm", "17", "--bloop-startup-timeout", "180s", "-S", scalaVersion, tempDir.toString)
+    val cpResult = os
+      .proc(
+        "scala-cli",
+        "compile",
+        "--print-classpath",
+        "--jvm",
+        "17",
+        "--bloop-startup-timeout",
+        "180s",
+        "-S",
+        scalaVersion,
+        tempDir.toString
+      )
       .call(cwd = tempDir, stderr = os.Pipe, stdout = os.Pipe)
     classpath = cpResult.out.text().trim
 
@@ -68,7 +91,8 @@ class AgentIntegrationTests extends FunSuite {
   }
 
   test("Running without agent produces Unsafe warnings") {
-    val result = os.proc("java", "-cp", classpath, "AgentTestApp")
+    val result = os
+      .proc("java", "-cp", classpath, "AgentTestApp")
       .call(check = false, stderr = os.Pipe)
 
     val stdout = result.out.text().trim
@@ -99,7 +123,8 @@ class AgentIntegrationTests extends FunSuite {
     }
 
   test("Running with agent eliminates Unsafe warnings") {
-    val result = os.proc("java", s"-javaagent:$agentJarPath", "-cp", classpath, "AgentTestApp")
+    val result = os
+      .proc("java", s"-javaagent:$agentJarPath", "-cp", classpath, "AgentTestApp")
       .call(check = false, stderr = os.Pipe)
 
     val stdout = result.out.text().trim
@@ -116,7 +141,8 @@ class AgentIntegrationTests extends FunSuite {
   }
 
   test("Running with agent in verbose mode logs patched class") {
-    val result = os.proc("java", s"-javaagent:$agentJarPath=verbose", "-cp", classpath, "AgentTestApp")
+    val result = os
+      .proc("java", s"-javaagent:$agentJarPath=verbose", "-cp", classpath, "AgentTestApp")
       .call(check = false, stderr = os.Pipe)
 
     val stdout = result.out.text().trim

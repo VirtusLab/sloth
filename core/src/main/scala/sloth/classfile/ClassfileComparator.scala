@@ -249,7 +249,7 @@ object ClassfileComparator {
       bytes1: Option[Array[Byte]] = None,
       bytes2: Option[Array[Byte]] = None
   ): Seq[Difference] = compare(class1, class2, bytes1, bytes2) match {
-    case FullyIdentical        => Seq.empty
-    case Different(diffs)      => diffs
+    case FullyIdentical   => Seq.empty
+    case Different(diffs) => diffs
   }
 }

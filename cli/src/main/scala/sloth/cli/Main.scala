@@ -160,7 +160,11 @@ object Main {
   }
 
   /** Processes a classfile group */
-  private def processGroup(group: ClassfileGroup, targetDir: os.Path, classLoader: ClassLoader): (String, PatchGroupResult) = {
+  private def processGroup(
+      group: ClassfileGroup,
+      targetDir: os.Path,
+      classLoader: ClassLoader
+  ): (String, PatchGroupResult) = {
     val groupName = group.primaryName
     print(fansi.Color.Cyan(s"Processing: $groupName ... "))
 

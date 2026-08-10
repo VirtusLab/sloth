@@ -4,8 +4,8 @@ import java.lang.instrument.Instrumentation
 
 /** Java agent entry point for Sloth.
   *
-  * Patches Scala 3.0-3.7 lazy val bytecode at class-load time to use
-  * VarHandle-based implementation (3.8+ format), avoiding sun.misc.Unsafe.
+  * Patches Scala 3.0-3.7 lazy val bytecode at class-load time to use VarHandle-based implementation (3.8+ format),
+  * avoiding sun.misc.Unsafe.
   *
   * Usage: java -javaagent:sloth-agent.jar[=options] -jar app.jar
   *

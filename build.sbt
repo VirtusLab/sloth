@@ -1,16 +1,18 @@
-inThisBuild(List(
-  organization := "org.virtuslab",
-  homepage := Some(url("https://github.com/VirtusLab/sloth")),
-  licenses := List("Apache-2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0")),
-  developers := List(
-    Developer(
-      "lbialy",
-      "Łukasz Biały",
-      "lbialy@virtuslab.com",
-      url("https://github.com/VirtusLab")
+inThisBuild(
+  List(
+    organization := "org.virtuslab",
+    homepage := Some(url("https://github.com/VirtusLab/sloth")),
+    licenses := List("Apache-2.0" -> url("http://www.apache.org/licenses/LICENSE-2.0")),
+    developers := List(
+      Developer(
+        "lbialy",
+        "Łukasz Biały",
+        "lbialy@virtuslab.com",
+        url("https://github.com/VirtusLab")
+      )
     )
   )
-))
+)
 
 lazy val core = project
   .in(file("core"))
@@ -52,7 +54,7 @@ lazy val testops = project
     assembly / assemblyJarName := "sloth-testops.jar",
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", xs @ _*) => MergeStrategy.discard
-      case x => MergeStrategy.first
+      case x                             => MergeStrategy.first
     }
   )
   .dependsOn(core)
@@ -107,7 +109,7 @@ lazy val cli = project
     assembly / assemblyJarName := "sloth.jar",
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", xs @ _*) => MergeStrategy.discard
-      case x => MergeStrategy.first
+      case x                             => MergeStrategy.first
     }
   )
   .dependsOn(core)
@@ -133,7 +135,7 @@ lazy val agent = project
       new RuleTransformer(new RewriteRule {
         override def transform(node: Node): Seq[Node] = node match {
           case e: Elem if e.label == "dependencies" => NodeSeq.Empty
-          case n => n
+          case n                                    => n
         }
       }).transform(node).head
     },
@@ -152,17 +154,20 @@ lazy val agent = project
       val fullCp = (cliJar +: depJars).map(_.getAbsolutePath).mkString(java.io.File.pathSeparator)
 
       val debugAssembly = sys.env.contains("DEBUG_AGENT_ASSEMBLY")
-      val processLogger: scala.sys.process.ProcessLogger = if (debugAssembly)
-        scala.sys.process.ProcessLogger(s => log.info(s), s => log.error(s))
-      else scala.sys.process.ProcessLogger(_ => (), _ => ())
+      val processLogger: scala.sys.process.ProcessLogger =
+        if (debugAssembly)
+          scala.sys.process.ProcessLogger(s => log.info(s), s => log.error(s))
+        else scala.sys.process.ProcessLogger(_ => (), _ => ())
 
       val processedFiles = depJars.map { depJar =>
         val dest = processedDir / depJar.getName
         IO.copyFile(depJar, dest)
         if (debugAssembly) log.info(s"Processing ${depJar.getName}...")
-        val exitCode = scala.sys.process.Process(
-          Seq("java", "-cp", fullCp, "sloth.cli.Main", dest.getAbsolutePath)
-        ).!(processLogger)
+        val exitCode = scala.sys.process
+          .Process(
+            Seq("java", "-cp", fullCp, "sloth.cli.Main", dest.getAbsolutePath)
+          )
+          .!(processLogger)
         if (exitCode != 0) {
           throw new MessageOnlyException(s"Failed to process ${depJar.getName} (exit code $exitCode)")
         }
@@ -182,8 +187,8 @@ lazy val agent = project
     assembly / assemblyJarName := "sloth-agent.jar",
     assembly / assemblyMergeStrategy := {
       case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
-      case PathList("META-INF", xs @ _*) => MergeStrategy.discard
-      case x => MergeStrategy.first
+      case PathList("META-INF", xs @ _*)       => MergeStrategy.discard
+      case x                                   => MergeStrategy.first
     },
     assembly / assemblyShadeRules := Seq(
       ShadeRule.rename("sloth.**" -> "sloth.shaded.agent.@0").inAll,

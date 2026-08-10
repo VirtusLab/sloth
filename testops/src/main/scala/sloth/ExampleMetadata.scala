@@ -4,20 +4,20 @@ import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 
 final case class ExpectedLazyVal(
-  name: String,
-  index: Int
+    name: String,
+    index: Int
 )
 
 final case class ExpectedClass(
-  className: String,
-  lazyVals: List[ExpectedLazyVal]
+    className: String,
+    lazyVals: List[ExpectedLazyVal]
 )
 
 final case class ExampleMetadata(
-  description: String,
-  expectedClasses: List[ExpectedClass],
-  expectedOutput: Option[String] = None,
-  mainClassName: String
+    description: String,
+    expectedClasses: List[ExpectedClass],
+    expectedOutput: Option[String] = None,
+    mainClassName: String
 )
 
 object ExampleMetadata {

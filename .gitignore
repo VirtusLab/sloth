@@ -4,3 +4,10 @@ target/
 project/.boot/
 project/.ivy/
 project/.sbtboot/
+
+.idea/
+.metals/
+.vscode/
+.bsp/
+.bloop/
+.cursor/
