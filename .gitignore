@@ -11,3 +11,4 @@ project/.sbtboot/
 .bsp/
 .bloop/
 .cursor/
+.scala-build/
