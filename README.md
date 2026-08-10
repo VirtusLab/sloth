@@ -145,9 +145,14 @@ sbt cli/assembly
 
 # Patch all classfiles in a directory (in-place)
 java -jar cli/target/scala-3.8.1/sloth.jar <directory>
+
+# Patch a JAR that references types living in the rest of the classpath
+java -jar cli/target/scala-3.8.1/sloth.jar <file.jar> --hierarchy-classpath <cp>
 ```
 
 The CLI recursively finds all `.class` files in the given directory, detects Scala 3.0-3.7.x lazy val implementations, and rewrites them to the 3.8+ VarHandle-based format. Use this for producing patched artifacts in build pipelines (assembly JARs, Docker images, etc.).
+
+Rewriting a method makes ASM recompute its stack map frames, which needs the supertypes of every reference type the method merges. Types defined in a *different* classpath entry are invisible to Sloth unless you say where they are, and an unresolvable merge widens to `java/lang/Object` — producing frames the JVM rejects at load time with `VerifyError: Bad return type`. Pass the rest of the application's classpath via `--hierarchy-classpath` (or `JarProcessor.process(input, output, hierarchyClasspath)` when using the library directly) to avoid this.
 
 ### Java Agent (Runtime Patching)
 

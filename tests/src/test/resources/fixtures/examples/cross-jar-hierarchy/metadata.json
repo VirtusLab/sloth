@@ -1,0 +1,16 @@
+{
+  "description": "Lazy val holder that merges two sibling subclasses into their common base — the merge only types correctly if the class hierarchy is resolvable during frame computation (VirtusLab/sloth#1)",
+  "mainClassName": "slothtest.crossjar.main",
+  "expectedClasses": [
+    {
+      "className": "CrossJarHolder$",
+      "lazyVals": [
+        {
+          "name": "picked",
+          "index": 1
+        }
+      ]
+    }
+  ],
+  "expectedOutput": "AA"
+}
