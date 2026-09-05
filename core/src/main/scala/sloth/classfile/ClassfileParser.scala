@@ -107,7 +107,7 @@ final class ClassfileParser:
         name = classNode.name,
         superName = classNode.superName,
         interfaces = Option(classNode.interfaces)
-          .map(_.asScala.toSeq.map(_.toString))
+          .map(_.asScala.toSeq)
           .getOrElse(Seq.empty),
         access = classNode.access,
         fields = fields,
@@ -240,7 +240,7 @@ final class ClassfileParser:
   private def parseExceptions(method: MethodNode): Seq[String] =
     Option(method.exceptions)
       .map:
-        _.asScala.map(_.toString).toSeq
+        _.asScala.toSeq
       .getOrElse(Seq.empty)
 
   /** Extracts method bytecode text from the full dump.
