@@ -28,12 +28,12 @@ lazy val core = project
     // code/runtime doesn't reintroduce sun.misc.Unsafe after the downgrade from 3.8.
     scalacOptions ++= Seq("-release", "9", "-Yfuture-lazy-vals"),
     libraryDependencies ++= Seq(
-      "org.ow2.asm" % "asm" % "9.7",
-      "org.ow2.asm" % "asm-commons" % "9.7",
-      "org.ow2.asm" % "asm-util" % "9.7",
-      "org.ow2.asm" % "asm-tree" % "9.7",
-      "com.outr" %% "scribe" % "3.15.0",
-      "com.lihaoyi" %% "os-lib" % "0.11.3"
+      "org.ow2.asm" % "asm" % "9.10.1",
+      "org.ow2.asm" % "asm-commons" % "9.10.1",
+      "org.ow2.asm" % "asm-util" % "9.10.1",
+      "org.ow2.asm" % "asm-tree" % "9.10.1",
+      "com.outr" %% "scribe" % "3.19.0",
+      "com.lihaoyi" %% "os-lib" % "0.11.8"
     )
   )
 
@@ -44,10 +44,8 @@ lazy val testops = project
     publish / skip := true,
     scalaVersion := "3.3.8",
     libraryDependencies ++= Seq(
-      "com.outr" %% "scribe" % "3.15.0",
-      "com.lihaoyi" %% "os-lib" % "0.11.3",
-      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core" % "2.32.0",
-      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % "2.32.0" % Provided
+      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core" % "2.41.2",
+      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % "2.41.2" % Provided
     ),
     Compile / mainClass := Some("sloth.CompileExamplesMain"),
     assembly / mainClass := Some("sloth.CompileExamplesMain"),
@@ -100,9 +98,7 @@ lazy val cli = project
     // Keep the CLI loadable on Java 9 as well (matches core/agent bytecode target).
     scalacOptions ++= Seq("-release", "9", "-Yfuture-lazy-vals"),
     libraryDependencies ++= Seq(
-      "com.lihaoyi" %% "os-lib" % "0.11.3",
-      "com.lihaoyi" %% "fansi" % "0.5.0",
-      "com.outr" %% "scribe" % "3.15.0"
+      "com.lihaoyi" %% "fansi" % "0.5.1",
     ),
     Compile / mainClass := Some("sloth.cli.Main"),
     assembly / mainClass := Some("sloth.cli.Main"),
@@ -139,9 +135,6 @@ lazy val agent = project
         }
       }).transform(node).head
     },
-    libraryDependencies ++= Seq(
-      "com.outr" %% "scribe" % "3.15.0"
-    ),
     processDeps := {
       val log = streams.value.log
       val cliJar = (cli / assembly).value
